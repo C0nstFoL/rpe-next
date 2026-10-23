@@ -1,10 +1,14 @@
 import { gameUiLayout, gameUiBindings, scoreAt } from '../core/game-ui.mjs';
+import { DEFAULT_CHART_NAME } from '../core/chart.mjs';
+import { t } from '../i18n.mjs';
 
 export function drawGameUi(context, chart, states, completionTimes, seconds, selectedLine, viewport, viewScale, skin, duration) {
   const { combo, score } = scoreAt(completionTimes, seconds);
   const progress = Math.max(0, Math.min(1, (seconds + (chart.META.offset ?? 0) / 1000) / Math.max(0.001, duration)));
   const bindings = gameUiBindings(chart, states);
-  const texts = { combonumber: String(combo), combo: 'combo', score: String(score).padStart(7, '0'), name: chart.META.name ?? '', level: chart.META.level ?? '' };
+  // A new chart stores the reference-language sentinel; show it localized.
+  const name = !chart.META.name || chart.META.name === DEFAULT_CHART_NAME ? t('doc.untitled') : chart.META.name;
+  const texts = { combonumber: String(combo), combo: 'combo', score: String(score).padStart(7, '0'), name, level: chart.META.level ?? '' };
   const baseScale = viewScale;
   const logicalWidth = viewport.width / viewport.scale;
   const logicalHeight = viewport.height / viewport.scale;
