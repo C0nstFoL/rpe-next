@@ -3440,5 +3440,7 @@ export default {
     'version-control.s23ef9f0': "当前：",
     'version-control.scf1a9fc': "对方：",
     'noise-skin.s5f3a1c4': "默认层",
+    'settings.languageHint': "切换语言会重新加载界面；请先保存当前谱面。",
+    'notify.localeNeedsSave': "请先保存当前谱面，再切换界面语言。",
   },
 };

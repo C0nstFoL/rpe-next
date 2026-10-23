@@ -148,14 +148,23 @@ const displayFields = [
   ['autosave-enabled', 'autoSave', true], ['autosave-seconds', 'autoSaveSeconds', 60], ['autosave-limit', 'autoSaveLimit', 10],
 ];
 const settingsDialog = createSettingsPanel({
-  onLocaleChange: locale => {
+  onLocaleChange: (locale, previousLocale) => {
+    // Parts of the editor (skins, mods, toolbar buttons…) build their DOM once
+    // at startup, so a live switch would leave them in the old language. Reload
+    // instead and reopen the chart the user was editing.
+    if (hasDocument && (session.history.dirty || assetDirty || !libraryProject?.id)) {
+      // Report in the language the user is still looking at.
+      if (previousLocale) setLocale(previousLocale);
+      notify(t('notify.localeNeedsSave'), 'warning');
+      return false;
+    }
     writeLocalePreference(locale.locale);
-    document.documentElement.lang = locale.locale;
-    renderSession();
+    try { if (hasDocument && libraryProject?.id) sessionStorage.setItem(LOCALE_REOPEN_KEY, libraryProject.id); } catch { /* storage unavailable */ }
+    location.reload();
+    return true;
   },
 });
-// Static markup is translated once here and again whenever the language
-// changes; dynamic panels redraw through `renderSession`.
+// Static markup is translated once here; the language switch reloads the page.
 installDomTranslation(() => { document.documentElement.lang = currentLocale().locale; renderSession(); });
 installNumericExpressionInputs();
 let session = new EditorSession();
@@ -181,6 +190,8 @@ let editorPreferences = { ...DEFAULT_EDITOR_PREFERENCES, ...readEditorPreference
 const fileOptions = () => ({ includeBackupCharts: editorPreferences.includeBackupCharts === true });
 let atHome = true;
 let hasDocument = false;
+// Set right before a language switch reloads the page so the same chart reopens.
+const LOCALE_REOPEN_KEY = 'rpe-next-reopen-project';
 let previewReturnTime = 0;
 let placementContext;
 let heldPreview;
@@ -652,6 +663,12 @@ const home = new ProjectHome(async id => {
     } else if (renamed) session.commit(t('app.sf1249c2'), { ...session.chart, META: { ...session.chart.META, name: project.chart.META.name } });
   }
 });
+// After a language switch the page reloads; reopen the chart that was open so
+// the user lands back where they were.
+try {
+  const reopen = sessionStorage.getItem(LOCALE_REOPEN_KEY);
+  if (reopen) { sessionStorage.removeItem(LOCALE_REOPEN_KEY); home.openProject(reopen).catch(reportError); }
+} catch { /* storage unavailable */ }
 const storagePanel = new StoragePanel(settingsDialog, { reportError, notify, fileOptions, canSwitchLibrary: () => {
   if (hasDocument && (session.history.dirty || assetDirty)) { notify(t('app.sa139201'), 'warning'); return false; }
   return true;

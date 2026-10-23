@@ -48,7 +48,7 @@ export class ModManager {
   async open(){await this.ready;this.renderList();if(!this.dialog.open)this.dialog.showModal();}
   renderList(){
     if(!this.selected||!this.records.has(this.selected))this.selected=this.records.keys().next().value;
-    this.list.replaceChildren();for(const [id,record]of this.records){const active=this.runtime.loaded.has(id);const node=button('',()=>{this.selected=id;this.renderList();});node.className='mod-card';node.dataset.modId=id;node.setAttribute('aria-pressed',String(this.selected===id));node.append(text('strong',record.manifest.name),text('span',t('mod-manager.s750c898', { p0: record.builtin?t('mod-manager.s09ceea7'):t('mod-manager.s60e2bca'), p1: record.manifest.version, p2: record.manifest.author })),text('small',active?t('mod-manager.s6ced5ae'):this.errors.has(id)?t('mod-manager.s9fb486c'):t('mod-manager.s0fe5a98')));this.list.append(node);}
+    this.list.replaceChildren();for(const [id,record]of this.records){const active=this.runtime.loaded.has(id);const node=button('',()=>{this.selected=id;this.renderList();});node.className='mod-card';node.dataset.modId=id;node.setAttribute('aria-pressed',String(this.selected===id));node.append(text('strong',localizedValue(record.manifest.name)),text('span',t('mod-manager.s750c898', { p0: record.builtin?t('mod-manager.s09ceea7'):t('mod-manager.s60e2bca'), p1: record.manifest.version, p2: record.manifest.author })),text('small',active?t('mod-manager.s6ced5ae'):this.errors.has(id)?t('mod-manager.s9fb486c'):t('mod-manager.s0fe5a98')));this.list.append(node);}
     this.renderDetails();
   }
   renderDetails(){

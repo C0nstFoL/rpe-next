@@ -54,8 +54,16 @@ export function createSettingsPanel({ onLocaleChange = () => {} } = {}) {
     const languageSelect = document.createElement('select'); languageSelect.id = 'ui-language'; languageSelect.setAttribute('aria-label', t('settings.language'));
     languageSelect.replaceChildren(...availableLocales().map(({ locale, label }) => new Option(label, locale)));
     languageSelect.value = currentLocale().locale;
-    languageSelect.onchange = () => { const applied = setLocale(languageSelect.value); rebuild(); onLocaleChange(applied); };
-    languageField.append(languageSelect); language.append(languageField); body.append(language);
+    languageSelect.onchange = () => {
+      // The host may reload the page to apply the language everywhere; it
+      // returns false when the switch has to wait (unsaved chart).
+      const previous = currentLocale().locale;
+      const next = setLocale(languageSelect.value);
+      if (onLocaleChange(next, previous) === false) { setLocale(previous); languageSelect.value = previous; }
+      rebuild();
+    };
+    const languageHint = document.createElement('p'); languageHint.className = 'hint'; languageHint.textContent = t('settings.languageHint');
+    languageField.append(languageSelect); language.append(languageField, languageHint); body.append(language);
     body.append(skins, noteSkins);
 
   group(t('settings.s7757a0d'), [['fps-unlimited', t('settings.s0908c46'), 'checkbox', false], ['fps-limit', t('settings.s819ead9'), 'number', DEFAULT_SETTINGS.fpsLimit, 10, undefined, 'any']]);

@@ -3443,5 +3443,7 @@ export default {
     'noise-skins.sf28f7a6': 'The built-in skin list is invalid',
     'noise-skins.scd063f4': 'A built-in skin entry is invalid',
     'noise-skin.s5f3a1c4': "Default layer",
+    'settings.languageHint': "Switching the language reloads the interface. Save the current chart first.",
+    'notify.localeNeedsSave': "Save the current chart before switching the interface language.",
   },
 };
