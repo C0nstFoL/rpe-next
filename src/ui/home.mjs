@@ -3,6 +3,7 @@ import { deleteProjectDrafts } from '../platform/recovery.mjs';
 import { showDialog } from './dialog.mjs';
 import { projectThumbnail } from '../platform/thumbnail.mjs';
 import { t } from '../i18n.mjs';
+import { chartDisplayName, groupDisplayName, isUngrouped } from '../core/labels.mjs';
 
 export class ProjectHome {
   constructor(openProject, reportError, changed) {
@@ -16,7 +17,10 @@ export class ProjectHome {
     this.projects = await listProjects();
     const select = document.getElementById('project-group'); const previous = select.value;
     select.replaceChildren(new Option(t('home.seb8d23f'), ''));
-    for (const group of [...new Set(this.projects.map(project => project.group ?? t('home.s8de957a')))].sort()) select.append(new Option(group, group));
+    // Option values stay as stored group keys; only the label is localized.
+    const groups = [...new Set(this.projects.map(project => isUngrouped(project.group) ? '' : String(project.group).trim()))]
+      .sort((left, right) => groupDisplayName(left).localeCompare(groupDisplayName(right)));
+    for (const group of groups) if (group) select.append(new Option(groupDisplayName(group), group));
     select.value = previous; this.render();
   }
   render() {
@@ -25,7 +29,7 @@ export class ProjectHome {
     const group = document.getElementById('project-group').value;
     const archived = document.getElementById('show-archived').checked;
     const sort = document.getElementById('project-sort').value;
-    const entries = this.projects.filter(project => Boolean(project.archived) === archived && (!group || (project.group ?? t('home.s8de957a')) === group) && `${project.name} ${project.charter ?? ''} ${project.group ?? ''}`.toLocaleLowerCase().includes(query))
+    const entries = this.projects.filter(project => Boolean(project.archived) === archived && (!group || (!isUngrouped(project.group) && String(project.group).trim() === group)) && `${chartDisplayName(project.name)} ${project.charter ?? ''} ${groupDisplayName(project.group)}`.toLocaleLowerCase().includes(query))
       .sort((left, right) => Number(Boolean(right.pinned)) - Number(Boolean(left.pinned)) || (sort === 'name' ? left.name.localeCompare(right.name) : (right.updated ?? right.imported ?? 0) - (left.updated ?? left.imported ?? 0)));
     const container = document.getElementById('project-cards'); container.replaceChildren();
     document.getElementById('project-count').textContent = t('home.sc030c0f', { p0: entries.length });
@@ -34,8 +38,8 @@ export class ProjectHome {
       const card = document.createElement('article'); card.className = 'project-card';
       const cover = document.createElement('div'); cover.className = 'project-cover'; cover.dataset.projectId = project.id;
       const placeholder = document.createElement('span'); placeholder.textContent = '♪'; cover.append(placeholder); this.observer.observe(cover);
-      const name = document.createElement('h2'); name.textContent = `${project.pinned ? '★ ' : ''}${project.name}`;
-      const detail = document.createElement('p'); detail.className = 'project-detail'; detail.textContent = t('home.sa7844bd', { p0: project.level || t('home.s2f144d1'), p1: project.group ?? t('home.s8de957a'), p2: project.notes ?? '—', p3: project.lines ?? '—' });
+      const name = document.createElement('h2'); name.textContent = `${project.pinned ? '★ ' : ''}${chartDisplayName(project.name)}`;
+      const detail = document.createElement('p'); detail.className = 'project-detail'; detail.textContent = t('home.sa7844bd', { p0: project.level || t('home.s2f144d1'), p1: groupDisplayName(project.group), p2: project.notes ?? '—', p3: project.lines ?? '—' });
       const credits = document.createElement('p'); credits.className = 'project-credits'; credits.textContent = t('home.s0177923', { p0: project.composer || t('home.se09740c'), p1: project.charter || t('home.s1b54779') }); credits.title = credits.textContent;
       const date = document.createElement('p'); date.textContent = `${new Date(project.updated ?? project.imported).toLocaleString()} · ${(project.bytes / 1048576).toFixed(1)} MiB`;
       const open = document.createElement('button'); open.className = 'project-open primary'; open.textContent = t('home.sf782e99'); open.onclick = () => this.openProject(project.id).catch(this.reportError);
@@ -59,7 +63,7 @@ export class ProjectHome {
         thumbnail = await projectThumbnail(project); summary = projectSummary(project, thumbnail); await updateSummary(summary);
         this.projects = this.projects.map(entry => entry.id === id ? summary : entry);
         if (container.isConnected) {
-          container.parentElement.querySelector('.project-detail').textContent = t('home.sd24e251', { p0: summary.level || t('home.s2f144d1'), p1: summary.group, p2: summary.notes, p3: summary.lines });
+          container.parentElement.querySelector('.project-detail').textContent = t('home.sd24e251', { p0: summary.level || t('home.s2f144d1'), p1: groupDisplayName(summary.group), p2: summary.notes, p3: summary.lines });
           const credits = container.parentElement.querySelector('.project-credits');
           credits.textContent = t('home.sb2f237a', { p0: summary.composer || t('home.se09740c'), p1: summary.charter || t('home.s1b54779') }); credits.title = credits.textContent;
         }
@@ -92,13 +96,14 @@ export class ProjectHome {
   edit(project) {
     const content = showDialog(t('home.sf79a83e'), t('home.sb6a4150'));
     const name = document.createElement('input'); name.value = project.name; name.setAttribute('aria-label', t('home.s3e72555'));
-    const group = document.createElement('input'); group.value = project.group ?? t('home.s8de957a'); group.setAttribute('aria-label', t('home.sa8d7295'));
+    const group = document.createElement('input'); group.value = isUngrouped(project.group) ? '' : project.group; group.setAttribute('aria-label', t('home.sa8d7295'));
     for (const [title, input] of [[t('home.s1be7ae4'), name], [t('home.s97d8a6c'), group]]) { const label = document.createElement('label'); label.className = 'field'; label.append(title, input); content.append(label); }
     const apply = document.getElementById('modal-apply'); apply.hidden = false;
     apply.onclick = async () => {
       try {
         if (!name.value.trim()) throw new Error(t('home.s9695a59'));
-        await this.modify(project.id, source => ({ ...source, group: group.value.trim() || t('home.s8de957a'), chart: { ...source.chart, META: { ...source.chart.META, name: name.value.trim() } } }));
+        // An empty group is stored as an empty string, never as localized text.
+        await this.modify(project.id, source => ({ ...source, group: group.value.trim(), chart: { ...source.chart, META: { ...source.chart.META, name: name.value.trim() } } }));
         document.getElementById('modal').close();
       } catch (error) { document.getElementById('modal-error').textContent = error.message; }
     };

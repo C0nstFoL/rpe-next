@@ -1,6 +1,10 @@
+// Must stay first: it applies the saved language before the modules below build
+// their label tables with `t()`.
+import '../platform/locale-bootstrap.mjs';
 import { EditorSession } from '../application/session.mjs';
 import { FrameLimiter, validFpsLimit } from '../core/frame-timing.mjs';
-import { assertChart, createChart, diagnose, EVENT_TYPES, previewLimitations, DEFAULT_CHART_NAME } from '../core/chart.mjs';
+import { assertChart, createChart, diagnose, EVENT_TYPES, previewLimitations } from '../core/chart.mjs';
+import { chartDisplayName } from '../core/labels.mjs';
 import { beatValue, parseBeat, formatBeat, fromNumber, upperBound } from '../core/beat.mjs';
 import { TempoMap } from '../core/tempo.mjs';
 import { AudioTransport } from '../platform/audio.mjs';
@@ -160,7 +164,7 @@ let assetFolders = new Set();
 let assetDirty = false;
 let chartName = 'chart.json';
 // A brand-new chart stores the reference-language sentinel; show it localized.
-const chartTitle = () => session.chart.META.name === DEFAULT_CHART_NAME || !session.chart.META.name ? t('doc.untitled') : session.chart.META.name;
+const chartTitle = () => chartDisplayName(session.chart.META.name);
 let recoveryId = crypto.randomUUID();
 let tempo = new TempoMap(session.chart.BPMList);
 let tempoEntries = session.chart.BPMList;
@@ -839,7 +843,7 @@ function togglePreview(force, stay = false, replay = false, { autoplay = true } 
   globalEvents.syncChrome();
   element('#multi-line-labels').hidden = preview.visible;
   element('#multi-line-scroll').hidden = preview.visible;
-  element('#preview-title').textContent = session.chart.META.name ?? '';
+  element('#preview-title').textContent = chartDisplayName(session.chart.META.name);
   timeline.origin = currentBeat();
   invalidate();
 }
@@ -1085,7 +1089,7 @@ function replaceChart(chart, name, nextAssets = new Map(), nextFolders = [], opt
   timeline.layer = 0;
   timeline.cancelPlacement();
   preview.visible = false; element('.preview-wrap').hidden = true; element('#view-toggle').classList.remove('active');
-  element('#preview-title').textContent = chart.META.name ?? '';
+  element('#preview-title').textContent = chartDisplayName(chart.META.name);
   element('#music-name').textContent = t('app.sbefb963');
   element('#scrubber').max = 600;
   renderSession();

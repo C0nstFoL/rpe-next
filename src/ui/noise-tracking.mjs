@@ -61,8 +61,8 @@ export class NoiseTrackingPanel {
   render() {
     this.host.replaceChildren(); this.controls = new Map(); this.scroll = document.createElement('div'); this.scroll.className = 'noise-tracking-scroll'; this.host.append(this.scroll);
     const title = document.createElement('div'); title.className = 'panel-title'; title.textContent = t('noise-tracking.sd5825e9'); this.scroll.append(title);
-    this.field('mode', t('noise-tracking.s88b3073'), { choices: [['line', '判定线'], ['note', t('noise-tracking.s7ac3289')]] });
-    this.field('lineIndex', '判定线', { choices: this.context.session.chart.judgeLineList.map((line, index) => [index, lineDisplayLabel(this.context.session.chart, index)]) });
+    this.field('mode', t('noise-tracking.s88b3073'), { choices: [['line', t('transport.line')], ['note', t('noise-tracking.s7ac3289')]] });
+    this.field('lineIndex', t('transport.line'), { choices: this.context.session.chart.judgeLineList.map((line, index) => [index, lineDisplayLabel(this.context.session.chart, index)]) });
     this.targetLabel = document.createElement('p'); this.targetLabel.className = 'hint noise-tracking-target'; this.scroll.append(this.targetLabel);
     this.sampleButton = button(t('noise-tracking.s162755d'), () => this.beginSample()); this.sampleButton.className = 'wide-button'; this.scroll.append(this.sampleButton);
     this.field('start', t('noise-tracking.s087c451'), { beat: true }); this.field('end', t('noise-tracking.sc4d3fa4'), { beat: true });

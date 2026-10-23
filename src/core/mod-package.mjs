@@ -1,12 +1,17 @@
 import { parse } from './vendor/acorn.mjs';
 import { parseShortcut } from './shortcut-spec.mjs';
-import { t } from '../i18n.mjs';
+import { isLocalizedMap, t } from '../i18n.mjs';
 
 export const MOD_API_VERSION = 1;
 export const MOD_LIMITS = Object.freeze({ files: 2048, bytes: 128 * 1024 * 1024, fileBytes: 32 * 1024 * 1024, codeBytes: 4 * 1024 * 1024 });
 const identifier = /^[a-z][a-z0-9-]{0,63}$/;
 const fail = message => { throw new Error(t('mod-package.s64b3ca6') + message); };
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
+// Manifest text may be a plain string or a per-locale map
+// (`{ "zh-CN": "…", "en-US": "…" }`), matching editor skins.
+const textLimit = (value, limit, required = false) => isLocalizedMap(value)
+  ? Object.keys(value).length > 0 && Object.values(value).every(text => typeof text === 'string' && text.length <= limit && (!required || text.trim()))
+  : typeof value === 'string' && value.length <= limit && (!required || Boolean(value.trim()));
 export function modPath(path) {
   if (typeof path !== 'string' || !path || path.length > 240 || /[\\:\x00-\x1f?#]/.test(path) || path.startsWith('/') || path.split('/').some(part => !part || part === '.' || part === '..')) fail(t('mod-package.saf5bc9e') + path);
   return path;
@@ -14,14 +19,15 @@ export function modPath(path) {
 export function modManifest(source) {
   if (!object(source) || source.protocol !== 'rpen-mod' || source.api !== MOD_API_VERSION) fail(t('mod-package.s3dd952a'));
   if (!identifier.test(source.id)) fail(t('mod-package.sa8a8ec6'));
-  for (const [key,limit] of [['name',100],['version',60],['author',160],['description',4000]]) if (typeof source[key] !== 'string' || source[key].length > limit || ['name','version'].includes(key) && !source[key].trim()) fail(key + t('mod-package.s6f488df'));
+  for (const [key,limit] of [['name',100],['version',60],['author',160],['description',4000]]) if (!textLimit(source[key], limit, key === 'name' || key === 'version')) fail(key + t('mod-package.s6f488df'));
   if (!/^\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?$/.test(source.version)) fail(t('mod-package.sdd67d4a'));
   modPath(source.entry); if (!/\.(m?js)$/.test(source.entry)) fail(t('mod-package.s9f26be6'));
   for (const key of ['dependencies','conflicts']) if (source[key] !== undefined && (!Array.isArray(source[key]) || source[key].length > 64 || source[key].some(id => !identifier.test(id) || id === source.id))) fail(key + t('mod-package.s499f31c'));
   if (source.settings !== undefined && (!object(source.settings) || Object.keys(source.settings).length > 100)) fail(t('mod-package.s1daf273'));
   for (const [key,definition] of Object.entries(source.settings ?? {})) {
-    if (!identifier.test(key) || !object(definition) || typeof definition.label !== 'string' || definition.label.length > 120 || !['boolean','number','text','color','select','shortcut'].includes(definition.type)) fail(t('mod-package.s9a6842c') + key);
-    if (definition.type === 'select' && (!object(definition.options) || !Object.keys(definition.options).length || Object.keys(definition.options).length>200 || Object.entries(definition.options).some(([key,label])=>key.length>2000||typeof label!=='string'||label.length>2000))) fail(t('mod-package.sa9e55a1'));
+    if (!identifier.test(key) || !object(definition) || !textLimit(definition.label, 120, true) || !['boolean','number','text','color','select','shortcut'].includes(definition.type)) fail(t('mod-package.s9a6842c') + key);
+    if (definition.description !== undefined && !textLimit(definition.description, 2000)) fail(t('mod-package.s9a6842c') + key);
+    if (definition.type === 'select' && (!object(definition.options) || !Object.keys(definition.options).length || Object.keys(definition.options).length>200 || Object.entries(definition.options).some(([key,label])=>key.length>2000||!textLimit(label,2000)))) fail(t('mod-package.sa9e55a1'));
     if (definition.type === 'number' && (!Number.isFinite(definition.min) || !Number.isFinite(definition.max) || definition.min > definition.max)) fail(t('mod-package.sce0b9c5'));
     if (definition.step!==undefined&&(!Number.isFinite(definition.step)||definition.step<=0))fail(t('mod-package.sc2ef5f2'));
     modSettingValue(definition,definition.default,key);

@@ -20,6 +20,12 @@ export function writeLocalePreference(locale, storage = localPreferences) {
     if (locale) storage.setItem(LOCALE_STORAGE_KEY, String(locale));
     else storage.removeItem(LOCALE_STORAGE_KEY);
   } catch { /* ignore: the UI still switches for this session */ }
+  // Mirrored locally so the next launch can pick the language up synchronously,
+  // before the desktop preference store has finished loading.
+  try {
+    if (locale) globalThis.localStorage?.setItem(LOCALE_STORAGE_KEY, String(locale));
+    else globalThis.localStorage?.removeItem(LOCALE_STORAGE_KEY);
+  } catch { /* storage unavailable */ }
 }
 
 // Languages of the legacy RPE configuration the user migrated. The original

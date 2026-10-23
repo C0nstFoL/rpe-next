@@ -102,7 +102,8 @@ export async function deleteProject(id, expectedRevision = null) {
 export function projectSummary(project, thumbnail) {
   return { version: 2, id: project.id, storageRevision: project.storageRevision ?? null, name: project.chart.META.name ?? project.chartName,
       chartName: project.chartName, identifier: project.identifier ?? project.info?.Path ?? project.chart?.META?.id ?? '', source: project.source, imported: project.imported, bytes: project.bytes,
-      updated: project.updated ?? project.imported, group: project.group ?? project.info?.Group ?? t('library.s8de957a'),
+      // Empty means "ungrouped"; the name is localized only when displayed.
+      updated: project.updated ?? project.imported, group: project.group ?? project.info?.Group ?? '',
       pinned: Boolean(project.pinned), archived: Boolean(project.archived), level: project.chart.META.level ?? '', charter: project.chart.META.charter ?? '',
       thumbnail, composer: project.chart.META.composer ?? '', lines: project.chart.judgeLineList?.length ?? 0,
       notes: (project.chart.judgeLineList ?? []).reduce((sum, line) => sum + (line.notes?.length ?? 0), 0) };

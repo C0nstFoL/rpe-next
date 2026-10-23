@@ -4,7 +4,7 @@ import { ModRuntime,shortcutFromEvent,formatShortcut } from './mod-runtime.mjs';
 import { builtinMods,readMods,storeMod,deleteMod,importMod,exportMod } from '../platform/mods.mjs';
 import { download } from '../platform/files.mjs';
 import { installModApi } from './mod-api.mjs';
-import { t } from '../i18n.mjs';
+import { localizedValue, t } from '../i18n.mjs';
 
 const ENABLED='rpe-next-mod-enabled-v1',OPTIONS='rpe-next-mod-options-v1',BOOT='rpe-next-mod-boot-v1';
 const read=(key,fallback)=>{try{return JSON.parse(localPreferences.getItem(key))??fallback;}catch{return fallback;}};
@@ -53,7 +53,7 @@ export class ModManager {
   }
   renderDetails(){
     this.details.replaceChildren();const record=this.records.get(this.selected);if(!record){this.details.append(text('p',t('mod-manager.saf6ee2c')));return;}const {manifest}=record;const active=this.runtime.loaded.get(manifest.id);
-    this.details.append(text('h3',manifest.name),text('p',manifest.description),text('p',`${manifest.id} · v${manifest.version} · API ${manifest.api} · ${manifest.author}`,'hint'));
+    this.details.append(text('h3',localizedValue(manifest.name)),text('p',localizedValue(manifest.description)),text('p',`${manifest.id} · v${manifest.version} · API ${manifest.api} · ${manifest.author}`,'hint'));
     const actions=document.createElement('div');actions.className='mod-manager-toolbar';const toggle=button(active?t('mod-manager.s0880212'):t('mod-manager.sdf29e88'),()=>this.toggle(manifest.id));toggle.className=active?'':'primary';toggle.disabled=this.busy;actions.append(toggle,button(t('mod-manager.s6630c53'),()=>download(exportMod(record),manifest.id+'.rpenmod')));
     if(!record.builtin)actions.append(button(t('mod-manager.s6567e7a'),()=>this.remove(manifest.id)));this.details.append(actions);
     if(this.errors.has(manifest.id))this.details.append(text('pre',this.errors.get(manifest.id),'mod-error'));
@@ -61,14 +61,14 @@ export class ModManager {
     const settings=this.settingsFor(record);
     if(Object.keys(manifest.settings).length)this.details.append(button(t('mod-manager.s6e43199'),async()=>{for(const [key,definition]of Object.entries(manifest.settings))await this.setSetting(manifest.id,key,structuredClone(definition.default));this.renderDetails();}));
     for(const [key,definition]of Object.entries(manifest.settings)){
-      const row=document.createElement('label');row.className='field';row.append(text('span',definition.label));let control;
-      if(definition.type==='select'){control=document.createElement('select');for(const [value,label]of Object.entries(definition.options))control.append(new Option(label,value));control.value=settings[key];}
+      const row=document.createElement('label');row.className='field';row.append(text('span',localizedValue(definition.label)));let control;
+      if(definition.type==='select'){control=document.createElement('select');for(const [value,label]of Object.entries(definition.options))control.append(new Option(localizedValue(label),value));control.value=settings[key];}
       else{control=document.createElement('input');control.type=definition.type==='boolean'?'checkbox':definition.type==='shortcut'?'text':definition.type;control.value=settings[key];if(definition.type==='boolean')control.checked=settings[key];if(definition.type==='number'){control.min=definition.min;control.max=definition.max;control.step=definition.step??'any';}}
-      control.dataset.modSetting=key;control.setAttribute('aria-label',definition.label);row.append(control);this.details.append(row);
+      control.dataset.modSetting=key;control.setAttribute('aria-label',localizedValue(definition.label));row.append(control);this.details.append(row);
       const save=async value=>{try{await this.setSetting(manifest.id,key,value);control.setCustomValidity('');this.message.textContent=t('mod-manager.s9fef6aa');}catch(error){control.setCustomValidity(error.message);this.message.textContent=error.message;}};
       if(definition.type==='shortcut'){control.readOnly=true;control.value=formatShortcut(settings[key]);control.title=t('mod-manager.s6c4574e');control.onkeydown=event=>{event.preventDefault();event.stopPropagation();const value=event.key==='Backspace'?'':shortcutFromEvent(event);if(value!==null){save(value);control.value=formatShortcut(value);}};}
       else control.onchange=()=>save(control.type==='checkbox'?control.checked:control.type==='number'?Number(control.value):control.value);
-      if(definition.description)this.details.append(text('p',definition.description,'hint'));
+      if(definition.description)this.details.append(text('p',localizedValue(definition.description),'hint'));
     }
     if(active){const commands=[...this.runtime.commands.values()].filter(command=>command.owner===manifest.id);if(commands.length){this.details.append(text('h4',t('mod-manager.sf3ea6d3')));for(const command of commands)this.details.append(button(command.title??command.id,()=>{this.dialog.close();command.run();}));}this.details.append(text('p',t('mod-manager.sf54d723', { p0: active.errors }),'hint'));}
     const source=document.createElement('details');source.append(text('summary',t('mod-manager.se6c3777')));const code=document.createElement('pre');code.className='mod-source';code.textContent=[...record.files].filter(([name])=>/\.(json|m?js|css|md)$/.test(name)).map(([name,bytes])=>`— ${name} —\n${new TextDecoder().decode(bytes).slice(0,100000)}`).join('\n\n');source.append(code);this.details.append(source);
@@ -90,7 +90,7 @@ export class ModManager {
   async disableAll(emergency=false){this.desired.clear();this.persist();for(const id of [...this.runtime.loaded.keys()].reverse())await this.runtime.unload(id);localPreferences.removeItem(BOOT);this.updateStatus();if(this.dialog.open)this.renderList();if(emergency)this.notify(t('mod-manager.sb66f83f'),'warning');}
   updateStatus(){const count=[...this.runtime.loaded.values()].filter(state=>state.status==='loaded').length;const node=document.querySelector('#mods-status');node.hidden=count===0;node.textContent=t('mod-manager.s0e1a497', { p0: count });node.title=t('mod-manager.sc43bb7d');this.invalidate();}
   async review(record){
-    this.warning.replaceChildren(text('h2',t('mod-manager.se2ecae2')),text('p',`${record.manifest.name} · ${record.manifest.version} · ${record.manifest.author}`),text('p',t('mod-manager.s8d616da')),text('p',t('mod-manager.sc2a5ae9')));
+    this.warning.replaceChildren(text('h2',t('mod-manager.se2ecae2')),text('p',`${localizedValue(record.manifest.name)} · ${record.manifest.version} · ${record.manifest.author}`),text('p',t('mod-manager.s8d616da')),text('p',t('mod-manager.sc2a5ae9')));
     const label=document.createElement('label');label.className='mod-consent';const consent=document.createElement('input');consent.type='checkbox';label.append(consent,t('mod-manager.sc56c250'));this.warning.append(label);
     const source=document.createElement('details');source.append(text('summary',t('mod-manager.s22ecfdc')));const pre=text('pre',[...record.files].filter(([path])=>/\.(m?js|json)$/.test(path)).map(([path,bytes])=>path+'\n'+new TextDecoder().decode(bytes).slice(0,100000)).join('\n\n'),'mod-source');source.append(pre);this.warning.append(source);
     const actions=document.createElement('div');actions.className='modal-actions';const accept=button(t('mod-manager.s056e307'),()=>this.finishWarning(true));accept.disabled=true;consent.onchange=()=>accept.disabled=!consent.checked;actions.append(button(t('mod-manager.s4d0b468'),()=>this.finishWarning(false)),accept);this.warning.append(actions);this.warning.showModal();return new Promise(resolve=>{this.warningResolve=resolve;});
