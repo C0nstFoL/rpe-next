@@ -2,6 +2,16 @@ export const NOISE_LAYER_VERSION = 230;
 export const DEFAULT_NOISE_LAYER = 'default';
 export const noiseLayers = chart => chart.noiseAreaLayers?.length ? chart.noiseAreaLayers : [{ id: DEFAULT_NOISE_LAYER, name: '默认层', skin: '', parameters: {} }];
 export const noiseLayerId = area => area.layerId ?? DEFAULT_NOISE_LAYER;
+const renderedLayerIds = new WeakMap();
+export function noiseRenderingLayers(chart, areas = chart.blockAreaList ?? []) {
+  if (!areas.length) return [];
+  let cached = renderedLayerIds.get(areas);
+  if (!cached || cached.length !== areas.length) {
+    cached = { length: areas.length, ids: new Set(areas.map(noiseLayerId)) };
+    renderedLayerIds.set(areas, cached);
+  }
+  return noiseLayers(chart).filter(layer => cached.ids.has(layer.id));
+}
 export function withNoiseLayers(chart, layers, areas = chart.blockAreaList ?? []) {
   const next = { ...chart, META: { ...chart.META, RPEVersion: Math.max(chart.META.RPEVersion ?? 0, NOISE_LAYER_VERSION) }, noiseAreaLayers: layers, blockAreaList: areas };
   validateNoiseLayers(next); return next;

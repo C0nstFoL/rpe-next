@@ -8,6 +8,20 @@ import { noiseSampleHandle, samplingTarget, fitNoiseSampleView } from '../src/co
 import { previewPositionScale } from '../src/core/editor-display.mjs';
 import { createChart } from '../src/core/chart.mjs';
 
+test('噪域编辑只查询可见生命周期，保留原顺序、边界命中及撤销后的索引更新', () => {
+  let chart = createChart();
+  chart.blockAreaList = Array.from({ length: 15000 }, (_, index) => createNoiseArea(index, index + 2));
+  const editor = Object.assign(Object.create(NoiseAreaEditor.prototype), { getContext: () => ({ session: { chart } }) });
+  const actual = editor.visibleAreas(7000, 7001);
+  const expected = chart.blockAreaList.flatMap((area, index) => index + 2 >= 7000 && index <= 7001 ? [index] : []);
+  assert.deepEqual(actual.map(entry => entry.index), expected);
+  const index = editor.areaIndex; editor.visibleAreas(7001, 7002); assert.equal(editor.areaIndex, index);
+  const original = chart;
+  chart = { ...chart, blockAreaList: chart.blockAreaList.map((area, index) => index === 0 ? createNoiseArea(7000, 7001) : area) };
+  assert.equal(editor.visibleAreas(7000, 7001)[0].index, 0); assert.notEqual(editor.areaIndex, index);
+  chart = original; assert.deepEqual(editor.visibleAreas(7001, 7000).map(entry => entry.index), expected);
+});
+
 const interval = (start, end, readyFlash) => ({ startTime: fromNumber(start), endTime: fromNumber(end), readyFlash });
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-7, `${actual} != ${expected}`);
 

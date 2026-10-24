@@ -478,6 +478,7 @@
     { "selector": "footer .chart-info dt", "set": { "color": "var(--rpen-ink-faint)" } },
     { "selector": "footer .chart-info dd", "set": { "color": "var(--rpen-ink-text-10)" } },
     { "selector": "@inspector", "set": { "background": "var(--rpen-ink-surface)", "padding-bottom": "52px" } },
+    { "selector": "@inspector:has([data-panel=ai]:not([hidden]))", "set": { "padding-bottom": "0" } },
     { "selector": "@inspector-tabs", "set": { "padding": "0 8px", "gap": "0", "background": "var(--rpen-ink-base)", "border-bottom": "1px solid var(--rpen-ink-line)", "align-items": "stretch" } },
     { "selector": "@inspector-tabs button", "set": { "position": "relative", "min-height": "46px", "padding": "0 4px", "background": "transparent", "border": "0", "border-radius": "0", "color": "var(--rpen-ink-label)", "font-size": "14px", "box-shadow": "none" } },
     { "selector": "@inspector-tabs button:hover:not(:disabled)", "set": { "background": "transparent", "color": "var(--rpen-ink-text)" } },
@@ -867,6 +868,7 @@
         "diagnose",
         "history-panel",
         "version-control-tool",
+        "ai-tool",
         "collaboration-tool"
       ]
     }

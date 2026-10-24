@@ -10,7 +10,7 @@ import { ShaderRuntime } from '../core/shader.mjs';
 import { ShaderPipeline } from './shader-pipeline.mjs';
 import { PreviewBackground, textureInViewport } from './preview-background.mjs';
 import { NoisePreview } from './noise-preview.mjs';
-import { noiseLayers } from '../core/noise-skin.mjs';
+import { noiseRenderingLayers } from '../core/noise-skin.mjs';
 import { DEFAULT_EDITOR_PREFERENCES } from '../core/default-settings.mjs';
 
 const clamp = value => Math.max(0, Math.min(1, value));
@@ -66,7 +66,7 @@ export class Preview {
     const positionScale = previewPositionScale(this.aspectRatio ?? 1.5);
     const states = this.scene.sample(seconds, positionScale);
     const shaderEffects = this.applyShaders ? this.shaderRuntime.active(seconds) : [];
-    const skinScene = noiseLayers(chart).some(layer => this.noisePreview.usesSkin(layer));
+    const skinScene = noiseRenderingLayers(chart).some(layer => this.noisePreview.usesSkin(layer));
     const integratedOverflow = Boolean(this.viewportOverflow && viewport.left > 0.5 && shaderEffects.length && !skinScene &&
       this.drawScene === Preview.prototype.drawScene && this.drawBackground === Preview.prototype.drawBackground && this.drawUi === Preview.prototype.drawUi);
     const overflowFrame = { width, height, viewport, scale, divisor, states, positionScale, shaderEffects };
@@ -141,7 +141,7 @@ export class Preview {
     surface.setTransform(ratio, 0, 0, ratio, 0, 0);
     if (!this.overflowSceneCaptured) {
       surface.clearRect(0, 0, frame.width, frame.height);
-      if (this.applyShaders || noiseLayers(chart).some(layer => this.noisePreview.usesSkin(layer))) { surface.fillStyle = '#111'; surface.fillRect(0, 0, frame.width, frame.height); }
+      if (this.applyShaders || noiseRenderingLayers(chart).some(layer => this.noisePreview.usesSkin(layer))) { surface.fillStyle = '#111'; surface.fillRect(0, 0, frame.width, frame.height); }
       const guides = this.guides, hits = this.noteHitAreas;
       try {
         this.drawBackground(surface, chart, tempo, seconds, selectedLine, expanded);

@@ -16,6 +16,7 @@ export class NoiseSkinRenderer {
   constructor(invalidate, report) {
     this.invalidate = invalidate; this.report = report; this.skins = new Map(); this.instances = new Map(); this.errors = new Set();
     this.canvas = document.createElement('canvas'); this.capture = document.createElement('canvas');
+    this.captureContext = this.capture.getContext('2d');
     this.gl = this.canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: false, antialias: false, preserveDrawingBuffer: true, depth: false, stencil: true });
     if (!this.gl) return;
     this.canvas.addEventListener('webglcontextlost', event => { event.preventDefault(); this.lost = true; });
@@ -23,9 +24,10 @@ export class NoiseSkinRenderer {
     this.initialize();
   }
   initialize() {
-    const gl = this.gl; this.maximum = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-    this.buffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+    const gl = this.gl; this.maximum = gl.getParameter(gl.MAX_TEXTURE_SIZE); this.maximumSamplers = gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS);
     this.quad = new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]);
+    this.quadBuffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer); gl.bufferData(gl.ARRAY_BUFFER, this.quad, gl.STATIC_DRAW);
+    this.buffer = gl.createBuffer(); this.vertexCapacity = 0; this.touchPoints = new Float32Array(128);
     this.copy = this.program(copy); this.maskProgram = this.program(maskFragment); this.downsample = this.program(downsample); this.imageConvert = this.program(imageConvert);
   }
   program(source) {
@@ -51,17 +53,29 @@ export class NoiseSkinRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     const framebuffer = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
     if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) { gl.deleteTexture(texture); gl.deleteFramebuffer(framebuffer); throw new Error('设备不支持皮肤 Target 格式：' + format); }
-    const target = { texture, framebuffer, width, height, format }; this.clear(target); return target;
+    const target = { texture, framebuffer, width, height, format, size: [width, height], texelSize: [1 / width, 1 / height] }; this.clear(target); return target;
   }
   destroy(target) { if (!target) return; const gl = this.gl; gl.deleteTexture(target.texture); gl.deleteFramebuffer(target.framebuffer); if (target.stencil) gl.deleteRenderbuffer(target.stencil); }
   clear(target) { const gl = this.gl; gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer); gl.colorMask(true,true,true,true); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT); }
   bind(program, target, vertices = this.quad) {
     const gl = this.gl; gl.bindFramebuffer(gl.FRAMEBUFFER, target?.framebuffer ?? null); gl.viewport(0, 0, target?.width ?? this.canvas.width, target?.height ?? this.canvas.height);
-    gl.useProgram(program.program); gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer); gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STREAM_DRAW);
+    gl.useProgram(program.program); gl.bindBuffer(gl.ARRAY_BUFFER, vertices === this.quad ? this.quadBuffer : this.buffer);
+    if (vertices !== this.quad) {
+      if (vertices.byteLength > this.vertexCapacity) { this.vertexCapacity = Math.max(256, this.vertexCapacity * 2, vertices.byteLength); gl.bufferData(gl.ARRAY_BUFFER, this.vertexCapacity, gl.DYNAMIC_DRAW); }
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, vertices);
+    }
     gl.enableVertexAttribArray(program.position); gl.vertexAttribPointer(program.position, 2, gl.FLOAT, false, 0, 0);
   }
   uniform(program, name, value) {
     const gl = this.gl; const entry = program.uniforms.get(name); if (!entry) return;
+    if (typeof value === 'number') { if (entry.value === value) return; entry.value = value; }
+    else {
+      let unchanged = entry.values?.length === value.length;
+      if (unchanged) for (let index = 0; index < value.length; index++) if (entry.values[index] !== value[index]) { unchanged = false; break; }
+      if (unchanged) return;
+      if (entry.values?.length !== value.length) entry.values = new Float64Array(value.length);
+      entry.values.set(value);
+    }
     if (entry.type === gl.INT || entry.type === gl.BOOL || entry.type === gl.SAMPLER_2D) gl.uniform1i(entry.location, value);
     else if (entry.type === gl.FLOAT_VEC2) gl.uniform2fv(entry.location, value);
     else if (entry.type === gl.FLOAT_VEC4) gl.uniform4fv(entry.location, value);
@@ -69,9 +83,9 @@ export class NoiseSkinRenderer {
   }
   sampler(program, name, target, unit) {
     if (!program.uniforms.has(name)) return unit;
-    const gl = this.gl; gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, target.texture); this.uniform(program, name, unit); this.uniform(program, name + 'Size', [target.width, target.height]); return unit + 1;
+    const gl = this.gl; gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, target.texture); this.uniform(program, name, unit); this.uniform(program, name + 'Size', target.size); return unit + 1;
   }
-  blit(source, target, program = this.copy) { this.bind(program, target); this.sampler(program, 'screenTexture', source, 0); this.uniform(program, 'screenSize', [source.width, source.height]); this.gl.drawArrays(this.gl.TRIANGLES, 0, 6); }
+  blit(source, target, program = this.copy) { this.bind(program, target); this.sampler(program, 'screenTexture', source, 0); this.uniform(program, 'screenSize', source.size); this.gl.drawArrays(this.gl.TRIANGLES, 0, 6); }
   skin(root, assets) {
     const files = new Map([...assets].filter(([name]) => name.startsWith(root + '/')).map(([name, bytes]) => [name.slice(root.length + 1), bytes]));
     let cached = this.skins.get(root);
@@ -117,6 +131,14 @@ export class NoiseSkinRenderer {
     const gl = this.gl; gl.bindFramebuffer(gl.FRAMEBUFFER,instance.fullMask.framebuffer); const stencil = gl.createRenderbuffer(); instance.fullMask.stencil = stencil; gl.bindRenderbuffer(gl.RENDERBUFFER,stencil); gl.renderbufferStorage(gl.RENDERBUFFER,gl.STENCIL_INDEX8,width,height); gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.STENCIL_ATTACHMENT,gl.RENDERBUFFER,stencil);
     if (gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE) throw new Error('设备不支持噪域几何计数缓冲');
     instance.mask = allocate(mw,mh,'r8');
+    instance.history = new Map();
+    instance.passes = channel.passes.map(pass => {
+      const program = skin.programs.get(pass.shader);
+      const inputs = Object.entries(pass.inputs).filter(([name]) => program.uniforms.has(name)).map(([name, input]) => ({ name, target: input === '$screen' ? null : instance.targets.get(input) }));
+      const images = (skin.definition.textures.get(pass.shader) ?? []).filter(image => program.uniforms.has(image.name)).map(image => ({ name: image.name, target: skin.images.get(JSON.stringify(image)) }));
+      if (Number(program.uniforms.has('screenTexture')) + Number(program.uniforms.has('blockMask')) + inputs.length + images.length > this.maximumSamplers) throw new Error('皮肤采样器数量超出设备范围');
+      return { program, target: instance.targets.get(pass.output), component: pass.component, inputs, images, constants: Object.entries(pass.constants), parameters: skin.definition.parameters.filter(parameter => program.uniforms.has(parameter.name)) };
+    });
     this.instances.set(layer.id,instance); return instance;
     } catch(error) { this.disposeInstance(instance); throw error; }
   }
@@ -149,27 +171,37 @@ export class NoiseSkinRenderer {
       const instance = this.instance(layer,skin,width,height);
       // Repaints at a paused time sample the same history; seeking starts a fresh history.
       const signature = JSON.stringify(layer.parameters ?? {});
+      if (!instance.parameters || signature !== instance.signature) {
+        instance.parameters = new Map(skin.definition.parameters.map(parameter => {
+          const value = layer.parameters?.[parameter.name] ?? parameter.value; const values = Array.isArray(value) ? value : [value];
+          if (values.some(item => !Number.isFinite(item)) || values.length !== (parameter.type === 'float' ? 1 : Number(parameter.type.slice(3))) || parameter.name === 'touchReleaseDuration' && value < 0) throw new Error('皮肤参数无效：' + parameter.name);
+          return [parameter.name, value];
+        }));
+      }
       if (instance.seconds !== undefined && (seconds < instance.seconds || Math.abs(seconds-instance.seconds)>1 || signature !== instance.signature)) for (const target of instance.targets.values()) this.clear(target.front);
       const repeated = seconds === instance.seconds && signature === instance.signature;
-      const snapshots = repeated ? instance.history : new Map([...instance.targets].filter(([,t])=>t.spec.noClear).map(([name,t])=>[name,this.snapshot(t.front)]));
-      if (repeated && snapshots) for (const [name, snapshot] of snapshots) this.blit(snapshot,instance.targets.get(name).front);
-      if (!repeated) { for (const target of instance.history?.values() ?? []) this.destroy(target); instance.history = snapshots; }
+      if (repeated) for (const [name, snapshot] of instance.history) this.blit(snapshot,instance.targets.get(name).front);
+      else for (const [name, target] of instance.targets) if (target.spec.noClear) {
+        if (!instance.history.has(name)) instance.history.set(name, this.texture(target.front.width, target.front.height, target.front.format));
+        this.blit(target.front, instance.history.get(name));
+      }
       instance.seconds = seconds; instance.signature = signature;
-      this.capture.width = width; this.capture.height = height; this.capture.getContext('2d').drawImage(context.canvas,viewport.left*ratio,viewport.top*ratio,viewport.width*ratio,viewport.height*ratio,0,0,width,height);
+      if (this.capture.width !== width || this.capture.height !== height) { this.capture.width = width; this.capture.height = height; }
+      else this.captureContext.clearRect(0, 0, width, height);
+      this.captureContext.drawImage(context.canvas,viewport.left*ratio,viewport.top*ratio,viewport.width*ratio,viewport.height*ratio,0,0,width,height);
       let screen = instance.screens[0]; let other = instance.screens[1]; gl.bindTexture(gl.TEXTURE_2D,screen.texture); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false); gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL,gl.NONE); gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gl.RGBA,gl.UNSIGNED_BYTE,this.capture); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
       this.geometryMask(instance,entries,viewport,scale,canvasWidth,canvasHeight);
       for (const target of instance.targets.values()) if (!target.spec.noClear) this.clear(target.front);
-      for (const pass of instance.channel.passes) {
-        const target = instance.targets.get(pass.output); const output = target ? target.back : other;
+      for (const pass of instance.passes) {
+        const target = pass.target; const output = target ? target.back : other;
         if (pass.component) this.blit(target.front,output);
-        const program = skin.programs.get(pass.shader); this.bind(program,output); let unit = 0;
+        const program = pass.program; this.bind(program,output); let unit = 0;
         unit = this.sampler(program,'screenTexture',screen,unit); unit = this.sampler(program,'blockMask',instance.mask,unit);
-        for (const [name,input] of Object.entries(pass.inputs)) unit = this.sampler(program,name,input === '$screen' ? screen : instance.targets.get(input).front,unit);
-        for (const image of skin.definition.textures.get(pass.shader) ?? []) unit = this.sampler(program,image.name,skin.images.get(JSON.stringify(image)),unit);
-        if (unit > gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS)) throw new Error('皮肤采样器数量超出设备范围');
-        this.uniform(program,'screenSize',[width,height]); this.uniform(program,'targetSize',[output.width,output.height]); this.uniform(program,'targetTexelSize',[1/output.width,1/output.height]); this.uniform(program,'time',seconds); this.uniform(program,'touchCount',0); this.uniform(program,'touchPoints',new Float32Array(128));
-        for (const parameter of skin.definition.parameters) { const value = layer.parameters?.[parameter.name] ?? parameter.value; const values = Array.isArray(value) ? value : [value]; if (values.some(v=>!Number.isFinite(v)) || values.length !== (parameter.type === 'float' ? 1 : Number(parameter.type.slice(3))) || parameter.name === 'touchReleaseDuration' && value < 0) throw new Error('皮肤参数无效：'+parameter.name); this.uniform(program,parameter.name,value); }
-        for (const [name,value] of Object.entries(pass.constants)) this.uniform(program,name,value);
+        for (const input of pass.inputs) unit = this.sampler(program,input.name,input.target ? input.target.front : screen,unit);
+        for (const image of pass.images) unit = this.sampler(program,image.name,image.target,unit);
+        this.uniform(program,'screenSize',instance.screens[0].size); this.uniform(program,'targetSize',output.size); this.uniform(program,'targetTexelSize',output.texelSize); this.uniform(program,'time',seconds); this.uniform(program,'touchCount',0); this.uniform(program,'touchPoints',this.touchPoints);
+        for (const parameter of pass.parameters) this.uniform(program,parameter.name,instance.parameters.get(parameter.name));
+        for (const [name,value] of pass.constants) this.uniform(program,name,value);
         if (pass.component) gl.colorMask(...'rgba'.split('').map(c=>c===pass.component));
         gl.drawArrays(gl.TRIANGLES,0,6); gl.colorMask(true,true,true,true);
         if (target) [target.front,target.back] = [target.back,target.front]; else [screen,other] = [other,screen];

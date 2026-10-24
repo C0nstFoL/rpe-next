@@ -15,7 +15,7 @@ export const EDITOR_SKIN_COMPONENTS = Object.freeze({
     'seek', 'undo', 'redo', 'copy', 'cut', 'paste', 'mirror', 'delete', 'notes-only', 'game-ui', 'reset-camera', 'mute-current-line',
     'metadata', 'bpm', 'assets', 'audio-analysis-tool', 'noise-areas-tool', 'curve-notes', 'curve-trajectory', 'text-lines-tool',
     'noise-fit-tool', 'noise-tracking-tool', 'multi-line-tool', 'diagnose', 'history-panel', 'collaboration-tool', 'version-control-tool'].map(id => [id, '#' + id])),
-  'version-control-panel': '#version-control-panel',
+  'version-control-panel': '#version-control-panel', 'ai-tool': '#ai-tool', 'ai-panel': '#ai-panel', 'tab-ai': '#ai-tab',
   'line-controls': '.line-select-group', 'beat-controls': '.beat-seek', 'view-buttons': '.view-buttons', 'multi-line-controls': '.multi-line-head-controls',
   'offset-control': 'label:has(#offset)', 'rate-control': 'label:has(#rate)', 'pitch-control': '.preserve-pitch',
   'time-progress': '.scrubber-wrap', 'time-readouts': '.time-readouts', clock: '#clock', 'beat-display': '#beat-display', 'bpm-display': '#bpm-display',
@@ -36,7 +36,7 @@ export const EDITOR_SKIN_MOVABLE = ['new', 'open', 'save', 'export', 'library', 
   'curve-notes', 'curve-trajectory', 'text-lines-tool', 'noise-fit-tool', 'noise-tracking-tool', 'multi-line-tool', 'diagnose', 'history-panel', 'collaboration-tool', 'version-control-tool',
   'seek', 'notes-only', 'game-ui', 'reset-camera', 'mute-current-line', 'tools', 'view-controls', 'view-buttons', 'line-controls', 'beat-controls',
   'offset-control', 'rate-control', 'pitch-control', 'time-readouts', 'multi-line-controls', 'tab-notes', 'tab-events', 'tab-lines', 'tab-chart', 'tab-noise',
-  'tool-select', 'tool-tap', 'tool-hold', 'tool-flick', 'tool-drag', 'global-events-tool'];
+  'tool-select', 'tool-tap', 'tool-hold', 'tool-flick', 'tool-drag', 'global-events-tool', 'ai-tool'];
 export const EDITOR_SKIN_CANVASES = Object.freeze({ notes: '#notes', events: '#events', 'global-events': '#global-events-canvas', 'global-density': '.global-event-density', noise: '#noise-editor-canvas', density: '#note-density', history: '#history-strip', audio: '#audio-analysis-overlay', selection: '.selection-overlay', 'batch-preview': '', easing: '.easing-preview', bezier: '.bezier-editor', curve: '.curve-preview', 'text-lines': '.text-lines-preview', trajectory: '.trajectory-preview,.trajectory-preset-thumbnail', 'noise-fit': '.noise-fit-source', 'line-thumbnail': '.line-switcher-card canvas', 'clipboard-thumbnail': '.clipboard-thumbnail' });
 export const EDITOR_SKIN_BUILTINS = Object.freeze(Object.fromEntries(['folder', 'save', 'setting', 'help', 'play', 'replay', 'showback', 'jump', 'copy', 'shear', 'paste', 'delete0', 'switch', 'layout', 'return', 'info', 'waves', 'bezier', 'addline', 'mute'].map(name => [name, `rpe/Texture/icon/${name}.png`])));
 export const EDITOR_SKIN_IMPORTANT = /^(?:--(?:rpen|skin)-[a-z0-9-]+|color|background(?:-[a-z-]+)?|border(?:-[a-z-]+)?|outline(?:-[a-z-]+)?|font(?:-[a-z-]+)?|line-height|letter-spacing|text-[a-z-]+|width|height|min-width|max-width|min-height|max-height|padding(?:-[a-z-]+)?|margin(?:-[a-z-]+)?|gap|row-gap|column-gap|flex(?:-[a-z-]+)?|grid(?:-[a-z-]+)?|order|box-shadow|filter)$/;

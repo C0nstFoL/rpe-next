@@ -12,6 +12,11 @@ function canvasRole(canvas) {
   if (['preview', 'realtime-preview'].includes(canvas?.id)) return null;
   return canvas?.dataset?.skinCanvas ?? Object.entries(EDITOR_SKIN_CANVASES).find(([, selector]) => selector && (selector === '#' + canvas?.id || canvas?.matches?.(selector)))?.[0];
 }
+export function editorCanvasOpacity(canvas, requestedRole) {
+  const role = requestedRole ?? canvasRole(canvas);
+  if (!settings || !Object.hasOwn(EDITOR_SKIN_CANVASES, role) || ['preview', 'realtime-preview'].includes(canvas?.id)) return 1;
+  const config = { ...settings, ...settings.targets?.[role] }; return config.opacity === undefined ? 1 : config.opacity;
+}
 export function editorSkinContext(context, requestedRole) {
   const role = requestedRole ?? canvasRole(context?.canvas);
   if (!context || !settings || !Object.hasOwn(EDITOR_SKIN_CANVASES, role) || ['preview', 'realtime-preview'].includes(context.canvas?.id)) return context;

@@ -1,5 +1,9 @@
 # RPEN 模组协议与开发指南 · API 1
 
+AI命令扩展：`api.agent.register(definition)` 可将任意模组功能注册给内置Agent，`api.agent.list()` 查看工具结构，卸载自动注销；通用谱面工具也能读写模组字段。权限、只读prepare、变更计划、执行一致性和Provider扩展详见 [AI Agent协议](AI-AGENT-PROTOCOL.zh-CN.md)。此项为API1兼容扩展，不要求旧模组修改。
+
+模型请求按需携带工具定义，新增模组命令可通过 `agent_tools` 发现，注册接口和完整 `api.agent.list()` 不变。`api.editor.agentWorkspaceId` 是当前谱面的稳定本地 AI 工作区标识；`await api.editor.agent.ready` 等待对话恢复，`await api.editor.agent.flush()` 等待本地记录落盘。可信扩展可使用 `api.editor.agent.workspace` 管理该工作区文件；桌面端限制在独立目录，不授予任意磁盘或终端访问。对话及原始请求属于用户本地数据，模组不应未经用户要求上传或读取无关内容。
+
 本协议定义可执行的编辑器扩展。模组可以修改界面、交互、渲染、编辑语义、谱面数据、导入导出和存储流程，也可以实现独立工具或游戏。内置示例不构成能力白名单。编辑器皮肤和音符皮肤属于各自的数据协议；模组可以调用、扩展或替换它们的实现。
 
 机器可读清单见 `schemas/mod-v1.schema.json`，接口声明见 `schemas/mod-api-v1.d.ts`。API 1 从当前开发版本提供。`api.version` 是模组宿主接口版本，`mod.json.version` 是模组自己的版本，与谱面的 `RPEVersion` 相互独立。
@@ -212,7 +216,9 @@ export function activate(api) {
 | `save()` | 调用现有主动保存流程，返回 Promise；必须 await 并处理写入或版本冲突错误，详见下文 |
 | `addAsset(path,bytes)/removeAsset(path)` | 改素材、标未保存、刷新贴图缓存 |
 
-可直接访问实际对象：`audio/playback/preview/realtimePreview/timeline/skin/images/hitSounds/editorSkins/noteSkins/noiseEditor/eventSampler/trajectoryPanel/textLinesPanel/noiseFitPanel/noiseTrackingPanel/multiEdit/batchControls/collaboration/versionControl`。它们不是只读快照或受限代理，可以包装方法、调整字段或替换底层行为；具体接口看同名源码。持久设置修改需调用相应的保存流程。
+可直接访问实际对象：`audio/audioSources/audioOnsets/audioAnalysis/playback/preview/realtimePreview/timeline/skin/images/hitSounds/editorSkins/noteSkins/noiseEditor/eventSampler/trajectoryPanel/textLinesPanel/noiseFitPanel/noiseTrackingPanel/multiEdit/batchControls/collaboration/versionControl`。它们不是只读快照或受限代理，可以包装方法、调整字段或替换底层行为；具体接口看同名源码。持久设置修改需调用相应的保存流程。`audioOnsets`管理采音算法、模型推理缓存与候选筛选，供原生界面和AI共用；调用`analyze(buffer, options, signal)`不修改谱面，模型环境需由用户配置，不能绕过其安装确认。
+
+音频分析的 `audioSources.select(id或id数组)` 临时切换实际播放与默认分析音源，至少选择一项；`selectedIds` 返回勾选项，`resolveSelection()` 返回其混合。`audio.buffer` 始终保留原音乐，`audio.playbackBuffer` 是当前实际播放缓冲；两者不可混为保存或导出的素材。所有声部共用原音乐零点与谱面延迟，选择不进入谱面历史或设置，退出谱面恢复原音频。波形/频谱按各声部颜色分列显示，`audioOnsets` 默认分析当前混合。
 
 `editor.raw` 提供更底层入口：实时 `session/chart/assets/tempo`、`renderSession/replaceChart/activatePane/togglePlayback/togglePreview/save/applyDisplaySettings/persistEditor/setHome`。`raw.chart=` 直接替换历史当前文档并通知，**不增加撤销记录**；`raw.tempo=` 更新时间轴 TempoMap。其他内部一致性由作者负责，优先使用普通 commit。可以通过任意 DOM/Web API、内部 ES 模块、类原型与这些入口继续扩展，宿主不限制为本节列出的功能。
 

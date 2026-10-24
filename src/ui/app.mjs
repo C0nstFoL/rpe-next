@@ -86,6 +86,10 @@ import { DEFAULT_EDITOR_PREFERENCES, DEFAULT_SETTINGS } from '../core/default-se
 import { appendLineShortcutDigit } from '../core/line-switch.mjs';
 import { installNumericExpressionInputs } from './numeric-expression-input.mjs';
 import { TimeReadouts } from './time-readouts.mjs';
+import { AgentPanel } from './agent-panel.mjs';
+import { AudioSources } from '../application/audio-sources.mjs';
+import { AudioOnsets } from '../application/audio-onsets.mjs';
+import { mapperTiming } from '../core/audio-mapper.mjs';
 
 try { await initializeLocalPreferences(); }
 catch (error) {
@@ -94,10 +98,14 @@ catch (error) {
   const retry = document.createElement('button'); retry.textContent = '重试'; retry.onclick = () => location.reload();
   host.append(message, retry); document.body.append(host); throw error;
 }
-if (globalThis.rpenDesktopStorage) globalThis.rpenFlushPreferences = flushLocalPreferences;
+if (globalThis.rpenDesktopStorage) {
+  globalThis.rpenFlushPreferences = async () => { await agentPanel?.flush(); await flushLocalPreferences(); };
+  globalThis.rpenPrepareClose = async () => { await agentPanel?.stopAndFlush(); await flushLocalPreferences(); };
+}
 
 const element = selector => document.querySelector(selector);
 let mods;
+let agentPanel;
 globalThis.__rpenModInputGate=true;
 for(const type of ['keydown','keyup','wheel','pointerdown','pointerup','mousedown','mouseup','click','dblclick','contextmenu','drop','dragstart','input','change','submit'])window.addEventListener(type,event=>{
   const runtime=mods?.runtime;
@@ -207,6 +215,7 @@ for (const renderer of [preview, realtimePreview]) {
 }
 const eventSampler = new EventSampler(element('.stage'), () => ({ session, tempo, preview, realtimePreview, previewVisible: preview.visible, timeline, seconds: chartSeconds, playing: () => audio.playing, sampleAutoFit: element('#sample-auto-fit').checked, pairedMovementSampling: element('#paired-movement-sampling').checked }), { invalidate, pause: () => playback.pause(), notify });
 const audioAnalysis = new AudioAnalysis(element('#audio-analysis-overlay'), () => timeline, () => audio, () => persistEditor());
+const audioSources = new AudioSources(() => audio), audioOnsets = new AudioOnsets({ getTiming: sourceOffset => mapperTiming(session.chart, sourceOffset) }); audioAnalysis.attachSources(audioSources, notify, audioOnsets);
 let noteHoverTimer = null;
 let noteHoverKey = null;
 function clearNoteSourceToast() {
@@ -615,9 +624,12 @@ subscribeLibrary(change => {
 });
 
 function setHome(visible) {
+  if (visible) agentPanel?.reset();
+  if (visible) audioSources.reset(audio.buffer);
   if (visible && noiseTrackingPanel.sampling) noiseTrackingPanel.endSample();
   if (visible && collaboration.client.active) collaboration.client.leave();
   atHome = visible;
+  if (!visible && hasDocument) agentPanel?.attach(versionRepoId);
   if (visible) clearNoteSourceToast();
   if (visible) { lineSwitcher.reset(); hitSounds.onlyCurrentLine = false; element('#mute-current-line')?.setAttribute('aria-pressed', 'false'); element('#mute-current-line')?.classList.remove('active'); }
   if (visible) { lineInfoVisible = false; element('#line-info-overlay')?.setAttribute('hidden', ''); }
@@ -738,6 +750,7 @@ function openGlobalEvents() {
   renderSession();
 }
 const globalEventsTool = document.createElement('button'); globalEventsTool.id = 'global-events-tool'; globalEventsTool.textContent = '全局事件'; element('#noise-areas-tool').after(globalEventsTool);
+const aiTool = document.createElement('button'); aiTool.id = 'ai-tool'; aiTool.textContent = 'AI 辅助'; element('#history-panel').before(aiTool);
 globalEventsTool.onclick = openGlobalEvents;
 element('#close-global-events').onclick = () => { globalEvents.close(); renderSession(); };
 element('#noise-areas-tool').addEventListener('click', openNoisePanel);
@@ -954,6 +967,7 @@ function renderSession() {
     else if (noiseEditor.active) noiseEditor.render();
     else if (multiEdit.committing) multiEdit.sync();
     else if (activePaneName === 'collaboration') collaboration.renderState();
+    else if (activePaneName === 'ai') {}
     else if (textLinesPanel.active) textLinesPanel.sync();
     else if (noiseFitPanel.active) noiseFitPanel.sync();
     else if (noiseTrackingPanel.active) noiseTrackingPanel.sync();
@@ -983,8 +997,9 @@ function renderSession() {
 session.addEventListener('change', renderSession);
 
 function replaceChart(chart, name, nextAssets = new Map(), nextFolders = [], options = {}) {
+  agentPanel?.reset();
   assertChart(chart);
-  if (!options.preserveRepoId) { versionRepoId = crypto.randomUUID(); versionControl?.detach(); }
+  if (!options.preserveRepoId) { versionRepoId = options.repoId ?? crypto.randomUUID(); versionControl?.detach(); }
   if (eventSampler.active) eventSampler.finish(false);
   noiseEditor.reset();
   globalEvents.reset();
@@ -1024,6 +1039,7 @@ function replaceChart(chart, name, nextAssets = new Map(), nextFolders = [], opt
   element('#scrubber').max = 600;
   renderSession();
   hasDocument = true; setHome(false);
+  agentPanel?.attach(versionRepoId);
   status(`已打开 ${name}`);
 }
 
@@ -1035,7 +1051,7 @@ function guardReplace(action) {
 
 async function loadCandidate(candidate, nextAssets, options = {}) {
   attachExternalEffects([candidate], nextAssets);
-  replaceChart(candidate.chart, candidate.name, nextAssets, options.folders ?? candidate.project?.assetFolders ?? [], options);
+  replaceChart(candidate.chart, candidate.name, nextAssets, options.folders ?? candidate.project?.assetFolders ?? [], { ...options, repoId: candidate.project?.vcsId ?? candidate.project?.id });
   libraryProject = candidate.project ?? null;
   if (candidate.project?.vcsId) versionRepoId = candidate.project.vcsId;
   syncProjectFolderButton();
@@ -1101,23 +1117,30 @@ function prependAudioSilence() {
   const apply = element('#modal-apply'); apply.hidden = false; apply.textContent = '确认增加';
   apply.onclick = async () => {
     element('#modal').close();
+    try { await applyAudioLeadingSilence({ targetSession, buffer, revision, seconds }); } catch (error) { reportError(error); }
+  };
+}
+
+async function applyAudioLeadingSilence({ targetSession, buffer, revision, seconds, signal }) {
     const button = element('#audio-leading-silence'); button.disabled = true; button.textContent = '正在生成空白音频…';
-    const cancelled = () => session !== targetSession || audio.loadRevision !== revision;
+    const cancelled = () => signal?.aborted || session !== targetSession || audio.loadRevision !== revision;
+    const check = () => { if (cancelled()) throw new DOMException('音频处理已取消或谱面已变化', 'AbortError'); };
     try {
-      if (cancelled()) return;
+      check();
       playback.pause();
       const wave = await pcmWave(buffer, cancelled, seconds);
-      if (!wave || cancelled()) return;
+      check(); if (!wave) throw Error('空白音频生成失败');
       const bytes = new Uint8Array(await wave.arrayBuffer());
-      if (cancelled()) return;
+      check();
       const sourceName = resourceReferences(session.chart, assets, chartName).song || 'music';
       const stem = sourceName.replaceAll('\\', '/').split('/').at(-1).replace(/\.[^.]+$/, '') + '-leading';
       let name = stem + '.wav'; let suffix = 2;
       while (assetBytes(assets, name, chartName)) name = `${stem}-${suffix++}.wav`;
-      if (await loadMusic(bytes, name, true, false)) notify('已增加 4 拍空白，谱面延迟未改变；请保存谱面', 'success');
-    } catch (error) { reportError(error); }
+      if (!await loadMusic(bytes, name, true, false)) throw Error('音乐载入失败或谱面已切换');
+      notify('已增加 4 拍空白，谱面延迟未改变；请保存谱面', 'success');
+      return { applied: true, name, seconds, undoable: false, offsetUnchanged: true, needsSave: true };
+    }
     finally { button.disabled = false; button.textContent = '音频开头增加 4 拍空白'; invalidate(); }
-  };
 }
 
 function seekBeat(value, pause = true) {
@@ -1133,6 +1156,7 @@ async function togglePlayback() {
 
 function save() {
   noiseEditor.flush();
+  agentPanel?.flush().catch(reportError);
   if (!persistenceRequested) { persistenceRequested = true; requestPersistence().then(() => storagePanel.refresh()).catch(() => {}); }
   editorSkinSignal('save-started');
   mods?.runtime.emit('editor:save-started',{});
@@ -1430,7 +1454,7 @@ listen('#bpm', () => { activatePane('bpm'); renderBpmPanel(session, element('#bp
 listen('#audio-leading-silence', prependAudioSilence);
 listen('#assets', () => { activatePane('assets'); assetLibrary.render(); });
 listen('#audio-analysis-tool', () => {
-  audioAnalysis.enabled = true; activatePane('audio-analysis'); audioAnalysis.render(element('#audio-analysis-panel')); audioAnalysis.draw(offsetSeconds()); persistEditor();
+  activatePane('audio-analysis'); audioAnalysis.render(element('#audio-analysis-panel')); audioAnalysis.draw(offsetSeconds());
 });
 function renderHistoryPanel() {
   const host = element('#history-results'); if (!host) return;
@@ -2050,10 +2074,10 @@ for (const [id, key] of displayFields.filter(([, key]) => key !== 'selectionInte
 timeline.eventPlacementType = timeline.eventTypes[0];
 
 const modEditor={
-  get session(){return session;},get chart(){return session.chart;},get tempo(){return tempo;},get assets(){return assets;},get preferences(){return preferences;},get editorPreferences(){return editorPreferences;},get chartName(){return chartName;},
+  get session(){return session;},get chart(){return session.chart;},get tempo(){return tempo;},get assets(){return assets;},get preferences(){return preferences;},get editorPreferences(){return editorPreferences;},get chartName(){return chartName;},get agentWorkspaceId(){return versionRepoId;},
   get hasDocument(){return hasDocument&&!atHome;},get home(){return atHome;},get activePane(){return activePaneName;},
   get dirty(){return session.history.dirty||assetDirty;},get libraryProject(){return libraryProject;},get loop(){return loop;},set loop(value){loop=value;},
-  audio,playback,preview,realtimePreview,timeline,skin,images,hitSounds,editorSkins,noteSkins,noiseEditor,eventSampler,trajectoryPanel,textLinesPanel,noiseFitPanel,noiseTrackingPanel,multiEdit,batchControls,collaboration,globalEvents,globalEventRegistry,openGlobalEvents,versionControl,
+  audio,audioSources,audioOnsets,audioAnalysis,playback,preview,realtimePreview,timeline,skin,images,hitSounds,editorSkins,noteSkins,noiseEditor,eventSampler,trajectoryPanel,textLinesPanel,noiseFitPanel,noiseTrackingPanel,multiEdit,batchControls,linePanel,collaboration,globalEvents,globalEventRegistry,openGlobalEvents,versionControl,
   chartSeconds,offsetSeconds,currentBeat,invalidate,render:renderSession,notify,save,activatePane,
   commit:(label,chart)=>session.commit(label,chart),replace:(chart,name=chartName)=>replaceChart(chart,name),
   seek:(seconds,{music=false,pause=true}={})=>{playback.seek(seconds+(music?0:offsetSeconds()),pause);invalidate();},
@@ -2071,4 +2095,25 @@ const modEditor={
     let done=false;return()=>{if(done)return;done=true;playback.pause();togglePreview(snapshot.visible,true,false,{autoplay:false});preview.allLines=snapshot.allLines;preview.lineNumbers=snapshot.lineNumbers;preview.lineArrows=snapshot.lineArrows;preview.lineTint=snapshot.lineTint;preview.cameraX=snapshot.cameraX;preview.viewDivisor=snapshot.viewDivisor;preview.collisionGeometry=snapshot.collisionGeometry;activatePane(snapshot.pane);invalidate();};
   },
 };
+agentPanel = new AgentPanel(modEditor, { activate: activatePane, notify, prependSilence: applyAudioLeadingSilence,
+  writeAsset: async (path, bytes, binding) => {
+    const references = resourceReferences(session.chart, assets, chartName);
+    if (!bytes) {
+      if (Object.values(references).includes(path) || session.chart.judgeLineList.some(line => line.Texture === path)) throw Error('素材仍被使用，请先移除相应引用');
+      assets.delete(path); assetDirty = true; images.load(session.chart, assets, chartName); invalidate(); return { deleted: path, needsSave: true, undoable: false };
+    }
+    if (binding === 'song' || references.song === path) { if (!await loadMusic(bytes, path, true, false)) throw Error('音乐载入失败或谱面已切换'); }
+    else { assets.set(path, bytes); assetDirty = true; if (binding === 'background') session.commit('AI · 绑定曲绘', { ...session.chart, META: { ...session.chart.META, background: path } }); images.load(session.chart, assets, chartName); }
+    hitSounds.setProject(session.chart, assets, chartName); invalidate(); return { written: path, bytes: bytes.length, needsSave: true, undoable: false };
+  },
+  capture: async () => {
+    const renderer = preview.visible ? preview : realtimePreview;
+    const visible = renderer.visible; renderer.visible = true;
+    try { renderer.draw(session.chart, tempo, chartSeconds(), session.lineIndex); } finally { renderer.visible = visible; }
+    const canvas = document.createElement('canvas'); canvas.width = Math.min(1600, renderer.canvas.width); canvas.height = Math.max(1, Math.round(renderer.canvas.height * canvas.width / Math.max(1, renderer.canvas.width)));
+    const context = canvas.getContext('2d'); context.drawImage(renderer.canvas, 0, 0, canvas.width, canvas.height);
+    for (const layer of [renderer.shaderCanvas, renderer.overlayCanvas]) if (layer?.style.visibility === 'visible') context.drawImage(layer, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/png');
+  },
+});
 mods=new ModManager(modEditor,{notify,invalidate});

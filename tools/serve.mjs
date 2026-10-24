@@ -15,7 +15,12 @@ const server = createServer(async (request, response) => {
     if (![`127.0.0.1:${port}`, `localhost:${port}`].includes(request.headers.host)) { response.writeHead(403); response.end(); return; }
     const pathname = decodeURIComponent(new URL(request.url, `http://127.0.0.1:${port}`).pathname);
     const relative = pathname === '/' ? 'index.html' : pathname.slice(1);
-    if (!(['index.html','styles.css','protocols/MOD-PROTOCOL.zh-CN.md','protocols/GLOBAL-EVENTS-PROTOCOL.zh-CN.md','protocols/EDITOR-SKIN-PROTOCOL.zh-CN.md','schemas/editor-skin-v1.schema.json','schemas/editor-skin-components.v1.json','schemas/mod-v1.schema.json','schemas/mod-api-v1.d.ts'].includes(relative) || relative.startsWith('src/') || relative.startsWith('assets/'))) throw new Error('Unavailable');
+    if (!(['index.html','styles.css','protocols/MOD-PROTOCOL.zh-CN.md','protocols/GLOBAL-EVENTS-PROTOCOL.zh-CN.md','protocols/AI-AGENT-PROTOCOL.zh-CN.md','protocols/EDITOR-SKIN-PROTOCOL.zh-CN.md','protocols/AUDIO-SEPARATION.zh-CN.md','schemas/editor-skin-v1.schema.json','schemas/editor-skin-components.v1.json','schemas/mod-v1.schema.json','schemas/mod-api-v1.d.ts'].includes(relative) || relative.startsWith('src/') || relative.startsWith('assets/'))) throw new Error('Unavailable');
+    if (relative === 'assets/agent-source.json') {
+      let content;
+      try { content = await readFile(resolve(root, relative)); } catch (error) { if (error.code !== 'ENOENT') throw error; const { createAgentSourceBundle } = await import('../desktop/agent-source.mjs'); content = JSON.stringify(await createAgentSourceBundle(root)); }
+      response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); response.end(request.method === 'HEAD' ? undefined : content); return;
+    }
     const path = await realpath(resolve(root, relative));
     if (!path.startsWith(root + sep)) throw new Error('Unavailable');
     const content = await readFile(path);

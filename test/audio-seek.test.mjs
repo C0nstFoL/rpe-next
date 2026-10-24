@@ -20,6 +20,7 @@ class SeekingMedia extends EventTarget {
   finishSeek() { this.current = this.target; this.seeking = false; this.dispatchEvent(new Event('seeked')); }
   play() { this.paused = false; this.plays++; return this.pending ?? Promise.resolve(); }
   pause() { this.paused = true; }
+  removeAttribute() {} load() {}
 }
 
 function setup() {
@@ -204,4 +205,48 @@ test('媒体负时间预滚不会预先调度越过音乐起点的打击音', as
   assert.equal(starts.length, 0);
   context.currentTime = 0.05; audio.update(); await Promise.resolve(); sounds.tick(chart, tempo);
   assert.equal(starts.length, 1);
+});
+
+test('临时声部播放保持原音乐与时长，暂停/倍速/保调/定位共用同一个时钟，恢复原音乐位置不跳变', async () => {
+  const previous = globalThis.Audio;
+  class StemMedia extends SeekingMedia {
+    set src(value) { queueMicrotask(() => this.onloadedmetadata?.()); }
+    removeAttribute() {} load() {}
+  }
+  globalThis.Audio = StemMedia;
+  const { audio, context } = setup(), streams = [];
+  context.createMediaElementSource = media => ({ connect() { streams.push(media); }, disconnect() {} });
+  const samples = new Float32Array(12000), original = { duration: 100, length: 12000, numberOfChannels: 1, sampleRate: 12000, getChannelData: () => samples }, stem = { ...original, getChannelData: () => Float32Array.from(samples, () => .25) }; audio.buffer = original;
+  try {
+    audio.seek(10); await audio.play(); context.currentTime = 1; await audio.setPlaybackBuffer(stem); assert.equal(audio.time, 11); assert.equal(audio.buffer, original); assert.equal(audio.playbackBuffer, stem); assert.equal(audio.duration, 100); assert.equal(audio.playing, true);
+    audio.setRate(.75); const active = audio.playbackMedia; assert.notEqual(active, audio.media); assert.equal(active.playbackRate, .75); active.finishSeek(); await Promise.resolve(); await Promise.resolve(); active.current = 12.25; audio.pause(); assert.equal(audio.time, 12.25);
+    const seeks = active.seeks; await audio.play(); assert.equal(active.seeks, seeks); assert.equal(audio.time, 12.25); audio.setPreservePitch(false); assert.equal(audio.usesMedia, false); context.currentTime += 1; assert.equal(audio.time, 13);
+    audio.resetPlaybackBuffer(); assert.equal(audio.playbackBuffer, original); assert.equal(audio.time, 13); assert.equal(audio.playing, true); audio.setPreservePitch(true); audio.media.finishSeek(); await Promise.resolve(); assert.equal(audio.media.playbackRate, .75); assert.equal(audio.time, 13);
+    audio.pause(); audio.clear(); assert.equal(audio.playbackOverride, null); assert.equal(audio.buffer, null);
+  } finally { globalThis.Audio = previous; }
+});
+
+test('声部媒体准备途中取消或清空音乐，不会恢复迟到音源', async () => {
+  const previous = globalThis.Audio;
+  class StemMedia extends SeekingMedia { set src(value) { queueMicrotask(() => this.onloadedmetadata?.()); } removeAttribute() {} load() {} }
+  globalThis.Audio = StemMedia;
+  const { audio, context } = setup(); context.createMediaElementSource = () => ({ connect() {}, disconnect() {} });
+  const samples = new Float32Array(96000), original = { duration: 2, length: samples.length, numberOfChannels: 1, sampleRate: 48000, getChannelData: () => samples }; audio.buffer = original;
+  try {
+    const controller = new AbortController(), pending = audio.setPlaybackBuffer({ ...original }, { signal: controller.signal }); controller.abort(); await assert.rejects(pending, { name: 'AbortError' }); assert.equal(audio.playbackOverride, null);
+    const stale = audio.setPlaybackBuffer({ ...original }); audio.clear(); await assert.rejects(stale, { name: 'AbortError' }); assert.equal(audio.playbackOverride, null); assert.equal(audio.buffer, null);
+  } finally { globalThis.Audio = previous; }
+});
+
+test('缓存声部播放资源，切回后复用媒体和PCM地址，清空音乐释放全部缓存', async () => {
+  const previous = globalThis.Audio;
+  class StemMedia extends SeekingMedia { set src(value) { this.url = value; queueMicrotask(() => this.onloadedmetadata?.()); } removeAttribute() {} load() {} }
+  globalThis.Audio = StemMedia;
+  const { audio, context } = setup(); let mediaSources = 0; context.createMediaElementSource = () => { mediaSources++; return { connect() {}, disconnect() {} }; };
+  const samples = new Float32Array(12000), original = { duration: 1, length: 12000, numberOfChannels: 1, sampleRate: 12000, getChannelData: () => samples }, first = { ...original }, second = { ...original }; audio.buffer = original;
+  try {
+    await audio.setPlaybackBuffer(first); const prepared = audio.playbackOverride; await audio.setPlaybackBuffer(second); audio.resetPlaybackBuffer(); audio.seek(.3); audio.setRate(.75);
+    await audio.setPlaybackBuffer(first); assert.equal(audio.playbackOverride, prepared); assert.equal(audio.playbackMedia, prepared.media); assert.equal(mediaSources, 2); assert.equal(audio.playbackMedia.playbackRate, .75); assert.equal(audio.time, .3);
+    assert.equal((await fetch(prepared.url)).ok, true); audio.clear(); assert.equal(audio.playbackCache.size, 0); assert.equal(audio.playbackCache.bytes, 0); await assert.rejects(fetch(prepared.url));
+  } finally { globalThis.Audio = previous; }
 });

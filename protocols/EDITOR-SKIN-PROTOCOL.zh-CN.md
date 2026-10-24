@@ -1,5 +1,7 @@
 # RPEN 编辑器皮肤协议 v1
 
+AI辅助沿用API3，新增 `@ai-tool`、`@ai-panel`、`@tab-ai` 与页面名 `ai`。入口可参与organize，页签仅在本次谱面首次开启后常驻；不得改变应用控制的显隐规则或妨碍审批与停止按钮。
+
 模组管理界面提供 `@mods-open/@mod-manager/@mod-list/@mod-details/@mod-status/@mod-warning` 别名，沿用 API 3。模组入口可参与 organize；皮肤不会改变外部模组导入的确认流程。
 
 本文同时是皮肤作者的实现规范和 AI agent 的制作指南。协议标识为 `rpen-editor-skin`，协议版本为整数 `1`。编辑器皮肤管理位于 **设置 → 编辑器皮肤**，适用于网页端和桌面端。
@@ -223,7 +225,7 @@ tokens 是初始默认值，不是只能读取的常量。可在 `@root` 状态/
 | `chart` | 谱面工具 |
 | `assets` | 素材库，`#asset-library` |
 | `collaboration` | 联机，`#collaboration-panel` |
-| `audio-analysis` | 波形/频谱，`#audio-analysis-panel` |
+| `audio-analysis` | 音频分析，`#audio-analysis-panel` |
 | `multi` | 多音符/多事件，`#multi-editor` |
 | `multi-line` | 多线，`#multi-line-editor` |
 | `metadata` | 谱面信息，`#metadata-editor` |
@@ -435,7 +437,7 @@ title、ariaLabel、placeholder 分别修改同名 HTML 提示、aria-label、�
 
 palette 的键必须为 `#rrggbb`；值为 `#rrggbb`，或以 `parameter(id)` 引用一个 type 为 color 的参数（API 3），例如 `"#e58d24": "parameter(event-fill)"`。引用在应用皮肤时解析为参数当前值，用户在设置中调整后画布随之重绘；引用不存在或非颜色参数会在导入时被拒绝。全局 palette、targets 和变体中的 palette 都可以引用。源色按绘制时的 RGB 匹配，支持原调用中的 #RGB、#RGBA、#RRGGBB、#RRGGBBAA、rgb()/rgba() 逗号写法，替换时保留原透明度。键推荐小写。经适配器创建的渐变，其 addColorStop 颜色同样映射；未匹配颜色、已经存在的外部渐变对象和图像像素保持原状；不存在自动反色或调换游戏素材的机制。
 
-当前接入时间轴音符/事件/噪域、密度条与历史条（包括其离屏缓存）、波形/频谱、框选层、批量编辑虚线预览、事件缓动与 Bezier 编辑、曲线音符对话框、文字拼合结果、轨迹/噪域图案小预览、切线/剪贴板缩略图。接入依靠绘制入口显式包装上下文，不会自动拦截浏览器所有 canvas；新增绘制功能必须登记角色并接入。字体测量、文字/图片二值化等算法用画布不接入，避免改变生成结果。编辑器后面的 `#realtime-preview` 和播放 `#preview` 完全排除，取样实际渲染和 shader 输出不做色板改写。
+当前接入时间轴音符/事件/噪域、密度条与历史条（包括其离屏缓存）、音频分析、框选层、批量编辑虚线预览、事件缓动与 Bezier 编辑、曲线音符对话框、文字拼合结果、轨迹/噪域图案小预览、切线/剪贴板缩略图。接入依靠绘制入口显式包装上下文，不会自动拦截浏览器所有 canvas；新增绘制功能必须登记角色并接入。字体测量、文字/图片二值化等算法用画布不接入，避免改变生成结果。编辑器后面的 `#realtime-preview` 和播放 `#preview` 完全排除，取样实际渲染和 shader 输出不做色板改写。
 
 可参考的常用源色：
 

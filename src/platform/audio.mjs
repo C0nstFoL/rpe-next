@@ -1,21 +1,24 @@
 import { mediaType } from './files.mjs';
 import { pcmWave } from './pcm-wave.mjs';
+import { ResourceCache } from '../core/resource-cache.mjs';
 
-function loadMediaSource(media, url, name) {
+function loadMediaSource(media, url, name, signal) {
   return new Promise((resolve, reject) => {
+    const abort = () => finish(Object.assign(new Error('音源切换已取消'), { name: 'AbortError' }));
     const finish = error => {
-      clearTimeout(timeout); media.onloadedmetadata = null; media.onerror = null;
+      clearTimeout(timeout); signal?.removeEventListener('abort', abort); media.onloadedmetadata = null; media.onerror = null;
       if (error) reject(error); else resolve();
     };
     const timeout = setTimeout(() => finish(new Error(`读取音乐 ${name} 超时，请检查文件或重新导入`)), 15000);
     media.onloadedmetadata = () => finish();
     media.onerror = () => finish(new Error(`无法解码音乐 ${name}；请检查文件完整性或转为 WAV/FLAC/MP3/OGG`));
+    signal?.addEventListener('abort', abort, { once: true }); if (signal?.aborted) { abort(); return; }
     media.src = url;
   });
 }
 
 export class AudioTransport {
-  constructor(contextFactory = () => new AudioContext()) {
+  constructor(contextFactory = () => new AudioContext(), { playbackCacheBytes = 192 * 1024 ** 2, playbackCacheEntries = 3 } = {}) {
     this.contextFactory = contextFactory;
     this.context = null;
     this.buffer = null;
@@ -30,6 +33,9 @@ export class AudioTransport {
     this.preservePitch = true;
     this.media = null;
     this.mediaStart = null;
+    this.playbackOverride = null;
+    this.overrideRevision = 0;
+    this.playbackCache = new ResourceCache({ maxBytes: playbackCacheBytes, maxEntries: playbackCacheEntries, dispose: override => this.disposePlaybackOverride(override), retain: override => override === this.playbackOverride });
   }
 
   ensureContext() {
@@ -45,6 +51,7 @@ export class AudioTransport {
   async load(bytes, name = 'music.mp3') {
     const revision = ++this.loadRevision;
     this.pause();
+    this.resetPlaybackBuffer({ clearCache: true });
     const context = this.ensureContext();
     let decoded;
     if (typeof Audio !== 'undefined') {
@@ -83,21 +90,55 @@ export class AudioTransport {
   }
 
   releaseMedia() { if (this.media) { this.media.pause(); this.media.removeAttribute('src'); this.media.load(); this.mediaSource?.disconnect(); URL.revokeObjectURL(this.mediaUrl); this.media = null; } }
-  clear() { this.loadRevision++; this.pause(); this.releaseMedia(); this.buffer = null; this.position = 0; }
+  clear() { this.loadRevision++; this.pause(); this.resetPlaybackBuffer({ clearCache: true }); this.releaseMedia(); this.buffer = null; this.position = 0; }
+  get playbackBuffer() { return this.playbackOverride?.buffer ?? this.buffer; }
+  get playbackMedia() { return this.playbackOverride ? this.playbackOverride.media : this.media; }
+  disposePlaybackOverride(override) { if (!override) return; override.media?.pause(); override.media?.removeAttribute('src'); override.media?.load(); override.source?.disconnect(); if (override.url) URL.revokeObjectURL(override.url); }
+  applyPlaybackOverride(override) {
+    const position = this.time, previous = this.playbackOverride; this.playRevision++; this.stopSource(); this.playbackOverride = override; this.position = position; this.anchor = this.context?.currentTime ?? 0;
+    if (previous && !this.playbackCache.has(previous.buffer)) this.disposePlaybackOverride(previous);
+    if (override) this.playbackCache.set(override.buffer, override, override.bytes ?? override.buffer.length * override.buffer.numberOfChannels * 4);
+    else this.playbackCache.trim();
+    if (this.playbackMedia) { this.playbackMedia.playbackRate = this.rate; this.playbackMedia.preservesPitch = this.preservePitch; }
+    if (this.playing) { this.startSource(); if (this.usesMedia && this.position >= 0) this.startMedia().catch(error => { this.lastError = error; }); }
+  }
+  resetPlaybackBuffer({ clearCache = false } = {}) { this.overrideRevision++; if (this.playbackOverride) this.applyPlaybackOverride(null); if (clearCache) this.playbackCache.clear(); }
+  async setPlaybackBuffer(buffer, { signal } = {}) {
+    if (signal?.aborted) throw Object.assign(new Error('音源切换已取消'), { name: 'AbortError' });
+    if (!buffer || buffer === this.buffer) { this.resetPlaybackBuffer(); return; }
+    if (buffer === this.playbackBuffer) return;
+    const revision = ++this.overrideRevision, original = this.buffer, cached = this.playbackCache.get(buffer);
+    if (cached && cached.original === original) { this.applyPlaybackOverride(cached); return; }
+    if (cached) this.playbackCache.delete(buffer);
+    const override = { buffer, original, media: null, source: null, url: null };
+    const valid = () => revision === this.overrideRevision && original === this.buffer && !signal?.aborted;
+    try {
+      if (typeof Audio !== 'undefined') {
+        const wave = await pcmWave(buffer, () => !valid()); if (!wave || !valid()) throw Object.assign(new Error('音源切换已取消'), { name: 'AbortError' });
+        override.bytes = wave.size; override.media = new Audio(); override.media.preload = 'auto'; override.url = URL.createObjectURL(wave);
+        await loadMediaSource(override.media, override.url, '分析音源', signal);
+        override.media.playbackRate = this.rate; override.media.preservesPitch = this.preservePitch;
+        override.source = this.ensureContext().createMediaElementSource(override.media); override.source.connect(this.gain);
+      }
+      if (!valid()) throw Object.assign(new Error('音源切换已取消'), { name: 'AbortError' });
+      this.applyPlaybackOverride(override);
+    } catch (error) { this.disposePlaybackOverride(override); throw error; }
+  }
   get duration() { return this.buffer?.duration || this.media?.duration || 600; }
-  get usesMedia() { return Boolean(this.media && (!this.buffer || this.preservePitch && this.rate !== 1)); }
+  get usesMedia() { return Boolean(this.playbackMedia && (!this.playbackBuffer || this.preservePitch && this.rate !== 1)); }
   get clockReady() {
-    return this.playing && (!this.usesMedia || this.position < 0 || !this.mediaStart && !this.media.seeking && this.media.paused !== true && (this.media.readyState === undefined || this.media.readyState >= 2));
+    const media = this.playbackMedia;
+    return this.playing && (!this.usesMedia || this.position < 0 || !this.mediaStart && !media.seeking && media.paused !== true && (media.readyState === undefined || media.readyState >= 2));
   }
   get scheduleHorizon() { return this.usesMedia && this.position < 0 ? 0 : Infinity; }
   get time() {
     if (!this.playing) return this.position;
-    if (this.usesMedia && this.position >= 0) return this.mediaStart || this.media.seeking ? this.position : this.media.currentTime;
+    if (this.usesMedia && this.position >= 0) return this.mediaStart || this.playbackMedia.seeking ? this.position : this.playbackMedia.currentTime;
     return this.position + (this.context.currentTime - this.anchor) * this.rate;
   }
 
   async startMedia() {
-    const media = this.media; const revision = this.playRevision;
+    const media = this.playbackMedia; const revision = this.playRevision;
     const start = { media, revision }; this.mediaStart = start;
     try {
       if (media.seeking) await new Promise((resolve, reject) => {
@@ -112,12 +153,12 @@ export class AudioTransport {
         media.addEventListener('seeked', seeked); media.addEventListener('error', failed);
         seeked();
       });
-      if (revision !== this.playRevision || media !== this.media || !this.playing) return;
+      if (revision !== this.playRevision || media !== this.playbackMedia || !this.playing) return;
       await media.play();
-      if (this.mediaStart === start && revision === this.playRevision && media === this.media && this.playing) this.mediaStart = null;
-      if (revision !== this.playRevision && (!this.playing || media !== this.media)) media.pause();
+      if (this.mediaStart === start && revision === this.playRevision && media === this.playbackMedia && this.playing) this.mediaStart = null;
+      if (revision !== this.playRevision && (!this.playing || media !== this.playbackMedia)) media.pause();
     } catch (error) {
-      if (revision === this.playRevision && media === this.media) { this.pause(); if (error.name !== 'AbortError') throw error; }
+      if (revision === this.playRevision && media === this.playbackMedia) { this.pause(); if (error.name !== 'AbortError') throw error; }
     }
   }
 
@@ -136,12 +177,12 @@ export class AudioTransport {
   startSource() {
     if (this.usesMedia) {
       const target = Math.max(0, this.position);
-      if (Math.abs(this.media.currentTime - target) > 1e-7) this.media.currentTime = target;
+      if (Math.abs(this.playbackMedia.currentTime - target) > 1e-7) this.playbackMedia.currentTime = target;
       return;
     }
-    if (!this.buffer || this.position >= this.duration) return;
+    if (!this.playbackBuffer || this.position >= this.duration) return;
     const source = this.context.createBufferSource();
-    source.buffer = this.buffer;
+    source.buffer = this.playbackBuffer;
     source.playbackRate.value = this.rate;
     source.connect(this.gain);
     source.start(this.context.currentTime + Math.max(0, -this.position) / this.rate, Math.max(0, this.position));
@@ -158,9 +199,9 @@ export class AudioTransport {
   pause() {
     this.playRevision++;
     const position = this.time;
-    const usePausedMediaTime = this.playing && this.usesMedia && this.position >= 0 && !this.mediaStart && !this.media.seeking;
+    const usePausedMediaTime = this.playing && this.usesMedia && this.position >= 0 && !this.mediaStart && !this.playbackMedia.seeking;
     this.stopSource();
-    this.position = Math.min(usePausedMediaTime ? this.media.currentTime : position, this.duration);
+    this.position = Math.min(usePausedMediaTime ? this.playbackMedia.currentTime : position, this.duration);
     this.playing = false;
   }
 
@@ -168,6 +209,7 @@ export class AudioTransport {
     this.mediaStart?.cancel?.();
     this.mediaStart = null;
     this.media?.pause();
+    if (this.playbackOverride) this.playbackOverride.media?.pause();
     if (this.source) { this.source.stop(); this.source.disconnect(); this.source = null; }
   }
 
@@ -182,7 +224,7 @@ export class AudioTransport {
       if (this.usesMedia && this.position >= 0) {
         this.startMedia().catch(error => { this.lastError = error; });
       }
-    } else if (this.usesMedia && Math.abs(this.media.currentTime - Math.max(0, this.position)) > 1e-7) this.media.currentTime = Math.max(0, this.position);
+    } else if (this.usesMedia && Math.abs(this.playbackMedia.currentTime - Math.max(0, this.position)) > 1e-7) this.playbackMedia.currentTime = Math.max(0, this.position);
   }
 
   setRate(rate) {
@@ -190,10 +232,10 @@ export class AudioTransport {
     const position = this.time;
     const wasMedia = this.usesMedia;
     this.rate = rate;
-    if (this.media) this.media.playbackRate = rate;
+    if (this.playbackMedia) this.playbackMedia.playbackRate = rate;
     if (wasMedia && this.usesMedia) {
       this.position = position; this.anchor = this.context?.currentTime ?? 0;
-      this.media.playbackRate = rate;
+      this.playbackMedia.playbackRate = rate;
       if (!this.mediaStart) this.playRevision++;
     } else this.seek(position);
   }
@@ -207,7 +249,7 @@ export class AudioTransport {
   setPreservePitch(enabled) {
     const position = this.time; const wasMedia = this.usesMedia;
     this.preservePitch = Boolean(enabled);
-    if (this.media) this.media.preservesPitch = this.preservePitch;
+    if (this.playbackMedia) this.playbackMedia.preservesPitch = this.preservePitch;
     if (wasMedia !== this.usesMedia) this.seek(position);
   }
 }

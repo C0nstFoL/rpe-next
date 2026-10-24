@@ -7,6 +7,7 @@ import { beatInputControl } from './beat-input.mjs';
 import { createEasingPicker, EASING_NAMES } from './easing-picker.mjs';
 import { prepareCanvas } from './timeline.mjs';
 import { editorSkinContext } from './editor-skin-canvas.mjs';
+import { rasterizeNoisePattern } from '../platform/pattern-raster.mjs';
 
 const button = (text, run) => { const element = document.createElement('button'); element.type = 'button'; element.textContent = text; element.onclick = run; return element; };
 const limited = (value, low, high) => Math.max(low, Math.min(high, value));
@@ -193,29 +194,7 @@ export class NoiseFitPanel {
   }
 
   async rasterize() {
-    const { precision, mode, text, font, spacing } = this.options;
-    if (!Number.isInteger(precision) || precision < 16 || precision > 512) throw new Error('精细程度须为 16–512 格');
-    const raster = document.createElement('canvas'); const context = raster.getContext('2d', { willReadFrequently: true });
-    if (mode === 'image') {
-      if (!this.bitmap) throw new Error('请先选择本地图片');
-      const scale = precision / Math.max(this.bitmap.width, this.bitmap.height);
-      raster.width = Math.max(1, Math.round(this.bitmap.width * scale)); raster.height = Math.max(1, Math.round(this.bitmap.height * scale));
-      context.drawImage(this.bitmap, 0, 0, raster.width, raster.height);
-    } else {
-      if (!text.trim()) throw new Error('请输入可见文字');
-      const lines = text.split(/\r?\n/); if (lines.length > 16 || text.length > 1000) throw new Error('一次最多拟合 16 行、1000 个字符');
-      if (!Number.isFinite(spacing) || spacing < 0.5 || spacing > 4) throw new Error('行距须在 0.5–4 之间');
-      await document.fonts.load(`96px "${font}"`, text);
-      context.font = `96px "${font}", sans-serif`; const metrics = lines.map(line => context.measureText(line));
-      const ascent = Math.max(1, ...metrics.map(metric => metric.actualBoundingBoxAscent || 72)); const descent = Math.max(1, ...metrics.map(metric => metric.actualBoundingBoxDescent || 18));
-      const naturalWidth = Math.max(1, ...metrics.map(metric => Math.max(metric.width, metric.actualBoundingBoxLeft + metric.actualBoundingBoxRight)));
-      const lineHeight = (ascent + descent) * spacing; const naturalHeight = ascent + descent + lineHeight * (lines.length - 1);
-      const scale = (precision - 4) / Math.max(naturalWidth, naturalHeight);
-      raster.width = Math.min(512, Math.max(1, Math.ceil(naturalWidth * scale) + 4)); raster.height = Math.min(512, Math.max(1, Math.ceil(naturalHeight * scale) + 4));
-      context.font = `${96 * scale}px "${font}", sans-serif`; context.fillStyle = '#fff'; context.textBaseline = 'alphabetic';
-      lines.forEach((line, index) => context.fillText(line, (raster.width - metrics[index].width * scale) / 2, 2 + (ascent + index * lineHeight) * scale));
-    }
-    return { pixels: context.getImageData(0, 0, raster.width, raster.height).data, width: raster.width, height: raster.height };
+    return rasterizeNoisePattern(this.options, this.bitmap);
   }
 
   async calculate(generation) {

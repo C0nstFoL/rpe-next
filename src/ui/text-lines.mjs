@@ -2,6 +2,7 @@ import { parseBeat, beatValue, formatBeat, fromNumber } from '../core/beat.mjs';
 import { parseLineExpression } from '../application/multi-line-edit.mjs';
 import { textLinesChart } from '../application/text-lines.mjs';
 import { editorSkinContext } from './editor-skin-canvas.mjs';
+import { rasterizeTextLines } from '../platform/pattern-raster.mjs';
 
 const action = (label, run) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.onclick = run; return button; };
 
@@ -79,23 +80,7 @@ export class TextLinesPanel {
     for (const token of options.lines.split(/\s+/)) if (/^[+-]?\d+(?::[+-]?\d+)?$/.test(token) && token.split(':').some(value => Number(value) < 0 || Number(value) >= chart.judgeLineList.length)) throw new Error('线号超出谱面范围');
     const indices = parseLineExpression(options.lines, chart.judgeLineList.length, chart); if (!indices.length || indices.length > 5000) throw new Error('请选择 1–5000 条现有判定线');
     const beatTime = parseBeat(options.beat); const beat = beatValue(beatTime);
-    await document.fonts.load(`96px "${options.font}"`, options.text); if (generation !== this.generation) return;
-    const lines = options.text.split(/\r?\n/); if (lines.length > 16) throw new Error('一次最多拟合 16 行文字');
-    const measure = document.createElement('canvas').getContext('2d'); const font = `96px "${options.font}", sans-serif`; measure.font = font;
-    const metrics = lines.map(line => measure.measureText(line));
-    const naturalWidth = Math.max(1, ...metrics.map(entry => Math.max(entry.width, entry.actualBoundingBoxLeft + entry.actualBoundingBoxRight)));
-    const ascent = Math.max(80, ...metrics.map(entry => entry.actualBoundingBoxAscent)); const descent = Math.max(20, ...metrics.map(entry => entry.actualBoundingBoxDescent));
-    const lineHeight = (ascent + descent) * options.spacing; const naturalHeight = ascent + descent + lineHeight * (lines.length - 1);
-    const worldHeight = options.width * naturalHeight / naturalWidth; const scale = Math.min(384 / options.width, 384 / worldHeight);
-    const texture = skin.noteImage?.(options.noteType) ?? skin.images.get({ 4: 'Drag2', 1: 'Tap2', 3: 'Flick2' }[options.noteType]); const length = noteSize * options.size * scale; const thickness = Math.max(5, noteSize * (texture ? texture.naturalHeight / texture.naturalWidth : 0.2)) * scale;
-    if (thickness < 1 || length < 1) throw new Error('笔画相对文字太细，请增大音符大小、减少文字或减小总宽度');
-    if (length * thickness > 2048) throw new Error('笔画相对文字太大，请减小音符大小或增大文字总宽度');
-    const padding = Math.ceil(Math.hypot(length, thickness) / 2) + 2;
-    const width = Math.ceil(options.width * scale) + padding * 2; const height = Math.ceil(worldHeight * scale) + padding * 2;
-    const raster = document.createElement('canvas'); raster.width = width; raster.height = height; const context = raster.getContext('2d');
-    const fontScale = options.width / naturalWidth * scale; context.font = `${96 * fontScale}px "${options.font}", sans-serif`; context.fillStyle = '#fff'; context.textBaseline = 'alphabetic';
-    lines.forEach((line, index) => context.fillText(line, (width - metrics[index].width * fontScale) / 2, padding + (ascent + index * lineHeight) * fontScale));
-    const pixels = context.getImageData(0, 0, width, height).data; const mask = Uint8Array.from({ length: width * height }, (unused, index) => pixels[index * 4 + 3] >= 100 ? 1 : 0);
+    const { raster, mask, width, height, length, thickness, texture, scale } = await rasterizeTextLines(options, skin, noteSize); if (generation !== this.generation) return;
     const worker = new Worker(new URL('../core/text-fit-worker.mjs', import.meta.url), { type: 'module' }); this.worker = worker;
     worker.onerror = () => { if (generation === this.generation) { this.cancel(); this.fail('后台拟合启动失败，请重新打开工具'); } };
     worker.onmessage = event => {

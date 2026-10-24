@@ -128,6 +128,18 @@ export async function readProject(id) {
 export const readProjectRevision = async id => { if (nativeStorage) { await nativeReady(); return nativeStorage.call('readRevision', id); } return access(['revisions'], 'readonly', transaction => transaction.objectStore('revisions').get(id)); };
 const readPreference = async key => nativeStorage ? (await nativeRead('preferences', key))?.value : access(['preferences'], 'readonly', transaction => transaction.objectStore('preferences').get(key));
 const writePreference = async (key, value) => { if (nativeStorage) { await nativeReady(); return nativeWrite('preferences', key, { id: key, value }); } return access(['preferences'], 'readwrite', transaction => transaction.objectStore('preferences').put(value, key)); };
+export { readPreference as readLibraryRecord, writePreference as writeLibraryRecord };
+export async function writeLibraryRecords(records, { guard } = {}) {
+  if (nativeStorage) { for (const record of records) await writePreference(record.key, record.value); return; }
+  const connection = await libraryDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = connection.transaction(['preferences'], 'readwrite', { durability: 'strict' }), store = transaction.objectStore('preferences'); let failure;
+    const write = () => { for (const record of records) store.put(record.value, record.key); };
+    if (guard) { const request = store.get(guard.key); request.onsuccess = () => { if (JSON.stringify(request.result ?? []) !== JSON.stringify(guard.value)) { failure = Error('工作区文件已被其他窗口修改，请重新读取'); transaction.abort(); } else write(); }; } else write();
+    transaction.oncomplete = () => { connection.close(); resolve(); };
+    transaction.onabort = transaction.onerror = () => { connection.close(); reject(failure ?? transaction.error ?? Error('文件写入失败')); };
+  });
+}
 export const readPreferences = () => readPreference('current');
 export const storePreferences = preferences => writePreference('current', preferences);
 export const readClipboardHistory = () => readPreference('clipboard-history');

@@ -113,6 +113,14 @@ export class ModRuntime {
         import:path=>import(state.modules.resolve('./'+modPath(path),'')),
       },
       commands:{register:definition=>{if(typeof definition.id!=='string'||typeof definition.run!=='function')throw Error('命令缺少 id / run');const key=id+':'+definition.id;if(this.commands.has(key))throw Error('命令重复：'+key);const command={...definition,owner:id,run:scope.wrap(definition.run)};this.commands.set(key,command);this.changed();return scope.defer(()=>{this.commands.delete(key);this.changed();});}},
+      agent:{
+        register:definition=>{
+          if (!this.editor.agent) throw Error('AI命令层未初始化');
+          const name = 'mod_' + id.replaceAll('-', '_').replaceAll('.', '_') + '_' + definition.name;
+          return scope.defer(this.editor.agent.commands.register({ ...definition, name }, id));
+        },
+        list:()=>this.editor.agent?.commands.tools() ?? [],
+      },
       globalEvents:{
         register:definition=>{
           const wrap=definition=>Object.fromEntries(Object.entries(definition).map(([key,value])=>[key,typeof value==='function'?(...args)=>{if(scope.closed)throw Error('该模组已停用');try{return value(...args);}catch(error){this.failure(id,error);throw error;}}:value]));
