@@ -7,12 +7,12 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { AgentCredentialVault, installAgentCredentials } from '../desktop/agent-credentials.mjs';
 import { AgentCredentials } from '../src/platform/agent-credentials.mjs';
 
-async function fixture(context) {
+async function fixture(context, { platform = process.platform } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'rpen-credentials-')); context.after(() => rm(root, { recursive: true, force: true }));
-  const secret = randomBytes(32), safeStorage = { isAsyncEncryptionAvailable: async () => true,
+  const secret = randomBytes(32), safeStorage = { isAsyncEncryptionAvailable: async () => true, getSelectedStorageBackend: () => 'gnome_libsecret',
     encryptStringAsync: async text => { const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', secret, iv), body = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]); return Buffer.concat([iv, cipher.getAuthTag(), body]); },
     decryptStringAsync: async bytes => { const decipher = createDecipheriv('aes-256-gcm', secret, bytes.subarray(0, 12)); decipher.setAuthTag(bytes.subarray(12, 28)); return { result: Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]).toString('utf8'), shouldReEncrypt: false }; } };
-  const file = join(root, 'agent-credentials.json'), options = { safeStorage, writeJson: (path, value) => writeFile(path, JSON.stringify(value)) };
+  const file = join(root, 'agent-credentials.json'), options = { safeStorage, platform, writeJson: (path, value) => writeFile(path, JSON.stringify(value)) };
   return { file, options, vault: new AgentCredentialVault(file, options) };
 }
 
@@ -26,13 +26,14 @@ test('桌面凭据独立加密保存、重启读取、多服务隔离、覆盖�
   await assert.rejects(vault.write('../escape', 'test'), /标识|格式/); await assert.rejects(vault.write('deepseek', 'test\ninvalid'), /格式/);
 });
 
-test('系统加密不可用时拒绝保存，删除不要求解密，失败后可恢复且密钥轮换会重新加密', async context => {
-  const { file, options, vault } = await fixture(context); await vault.write('deepseek', 'test-key');
+for (const platform of ['win32', 'darwin', 'linux']) test(`系统加密不可用时拒绝保存，删除不要求解密，失败后可恢复且密钥轮换会重新加密（${platform}）`, async context => {
+  const { file, options, vault } = await fixture(context, { platform }); await vault.write('deepseek', 'test-key');
   options.safeStorage.isAsyncEncryptionAvailable = async () => false;
   await assert.rejects(vault.write('other', 'test'), /加密/); await assert.rejects(vault.flush(), /加密/);
   await vault.write('deepseek', ''); await vault.flush(); assert.equal(await vault.read('deepseek'), '');
-  options.safeStorage.isAsyncEncryptionAvailable = async () => true; options.safeStorage.getSelectedStorageBackend = () => 'basic_text';
+  options.safeStorage.isAsyncEncryptionAvailable = async () => true; const backend = options.safeStorage.getSelectedStorageBackend; options.safeStorage.getSelectedStorageBackend = () => 'basic_text';
   const linux = new AgentCredentialVault(file, { ...options, platform: 'linux' }); await assert.rejects(linux.write('deepseek', 'test'), /加密/);
+  options.safeStorage.getSelectedStorageBackend = backend;
   await vault.write('deepseek', 'test-key'); const before = await readFile(file, 'utf8'), decrypt = options.safeStorage.decryptStringAsync;
   options.safeStorage.decryptStringAsync = async bytes => ({ ...await decrypt(bytes), shouldReEncrypt: true });
   assert.equal(await vault.read('deepseek'), 'test-key'); assert.notEqual(await readFile(file, 'utf8'), before);
