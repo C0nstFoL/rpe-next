@@ -67,7 +67,7 @@ export async function prepareAudioPython(runtime, signal, { target = audioSetupT
     const archive = await downloadTool(target, signal, runtime.progress, fetcher), binary = await extractAudioSetupTool(archive, target); checkSignal(signal);
     const pending = executable + '.pending'; await writeFile(pending, binary); await chmod(pending, 0o755); await rename(pending, executable); await writeFile(join(directory, 'verified.json'), JSON.stringify({ archive: target.sha256, binary: digest(binary) }));
   }
-  const pythonRoot = join(runtime.root, 'python'), cache = join(runtime.root, 'download-cache'), temporary = join(runtime.root, 'temp'); await mkdir(temporary, { recursive: true });
+  const pythonRoot = join(runtime.root, 'python'), cache = join(runtime.dataRoot ?? runtime.root, 'download-cache'), temporary = join(runtime.dataRoot ?? runtime.root, 'temp'); await mkdir(temporary, { recursive: true });
   const env = { ...runtime.environment(), TEMP: temporary, TMP: temporary, UV_PYTHON_INSTALL_DIR: pythonRoot, UV_CACHE_DIR: cache, UV_PYTHON_BIN_DIR: join(runtime.root, 'python-bin'), UV_NO_PROGRESS: '1', UV_NO_CONFIG: '1', UV_PYTHON_DOWNLOADS: 'automatic' };
   runtime.progress({ id: 'environment', stage: 'python', message: `准备独立 Python ${PYTHON_VERSION}，无需修改系统 Python…` });
   await runtime.run(executable, ['python', 'install', PYTHON_VERSION, '--no-bin', ...(target.platform === 'win32' ? ['--no-registry'] : []), '--no-progress', '--no-config'], { signal, id: 'environment', env });

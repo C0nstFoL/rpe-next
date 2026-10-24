@@ -7,7 +7,8 @@ export function showAudioSeparationGuide(desktop) {
   const host = showDialog('声部分离使用指南', '入口：谱面工具 → 音频分析 → 声部与分析音源'); host.classList.add('audio-separation-guide');
   host.closest('dialog').addEventListener('close', () => host.classList.remove('audio-separation-guide'), { once: true });
   if (desktop) steps(host, 'Windows / macOS / Linux 桌面端', [
-    '首次点击“一键准备分离环境”，选择 CPU 或 NVIDIA 加速。无需先安装 Python，也不用输入命令；CPU 适用于支持的桌面系统。',
+    '首次打开音频分析时，先阅读磁盘占用提示并选择存放位置，建议选择空间充足的非系统盘。新环境、模型和缓存可能占用数 GB 至数十 GB；取消选择不会开始安装。',
+    '点击“一键准备分离环境”，选择 CPU 或 NVIDIA 加速。无需先安装 Python，也不用输入命令；CPU 适用于支持的桌面系统。',
     '等待下载、安装和检查完成。首次使用需要网络及数 GB 可用空间；升级编辑器后会继续使用已安装环境。',
     '选择“四声部”或“六声部”，点击“分离当前音乐”。首次分离下载所选模型，后续使用缓存。',
     '勾选人声、鼓、贝斯等音源，至少保留一项。播放按钮会播放勾选声部的混合，倍速和保调照常生效；不同声部的波形/频谱以各自颜色显示。',
@@ -26,6 +27,7 @@ export function showAudioSeparationGuide(desktop) {
     '下载失败：检查网络和磁盘空间，再点一次“一键准备”。已经下载的文件尽量复用；失败不会改动谱面或原音乐。高级设置可选择已有环境或用已有 Python 安装。',
     '四声部为人声、鼓、贝斯、其他。六声部另含吉他、钢琴，但仍可能串音；需要不同模型时可导入外部结果。',
     '分离结果属于当前音乐的分析会话，不写进谱面包。需要保留或跨设备使用时请导出 WAV；本机再次分离相同音乐可复用缓存。',
+    ...(desktop ? ['“模型与缓存位置”可以查看和迁移数据；“清理音频缓存”经确认会清理所有谱面的分离、采音、下载和临时缓存，保留模型、运行环境、原音乐和谱面。'] : []),
   ]);
   host.append(node('p', '本机分离不需要 AI API Key，音频不会上传。联网仅用于下载环境、依赖和模型。'));
 }

@@ -1,5 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('rpenAgentCapture', { version: 1, capture: rect => ipcRenderer.invoke('rpen-agent-capture', rect) });
+contextBridge.exposeInMainWorld('rpenAudioStorage', {
+  version: 1,
+  call: (action, options = {}) => ipcRenderer.invoke('rpen-audio-storage', { ...options, action }),
+  onProgress: callback => { const handler = (event, value) => callback(value); ipcRenderer.on('rpen-audio-storage-progress', handler); return () => ipcRenderer.removeListener('rpen-audio-storage-progress', handler); }
+});
 contextBridge.exposeInMainWorld('rpenAgentWorkspace', {
   version: 1,
   call: (id, workspace, action, args) => ipcRenderer.invoke('rpen-agent-workspace', { id, workspace, action, args }),

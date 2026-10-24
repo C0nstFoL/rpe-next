@@ -4,6 +4,8 @@ import { pcmWave } from '../platform/pcm-wave.mjs';
 import { download } from '../platform/files.mjs';
 import { AudioOnsetsPanel } from './audio-onsets.mjs';
 import { showAudioSeparationGuide } from './audio-separation-guide.mjs';
+import { showAudioStorage, clearAudioCaches } from './audio-storage.mjs';
+import { prepareAudioStorage } from '../platform/audio-storage.mjs';
 
 const node = (tag, text = '', className = '') => { const element = document.createElement(tag); element.textContent = text; element.className = className; return element; };
 export class AudioSourcesPanel {
@@ -18,11 +20,25 @@ export class AudioSourcesPanel {
       if (value.stage !== 'log' && value.stage !== 'environment' || !this.statusText) this.statusText = value.message ?? '正在安装分离环境…';
       if (this.message) this.message.textContent = this.statusText; if (this.logOutput) this.logOutput.textContent = this.installLog.join('\n');
     });
+    globalThis.rpenAudioStorage?.onProgress?.(value => {
+      if (value.stage !== 'cleared') return;
+      this.cacheReset = this.resetAudioCaches().catch(error => this.notify(error.message, 'error'));
+    });
+  }
+  async resetAudioCaches() {
+    this.sources.controller?.abort();
+    const onsets = this.onsetPanel?.onsets; onsets?.cancel(); if (onsets) { onsets.cache = new WeakMap(); onsets.clearPreview(); }
+    if (this.sources.original) await this.sources.select('original');
+    for (const entry of this.sources.list()) if (entry.kind === 'separated') await this.sources.remove(entry.id);
+    this.statusText = '全部谱面的音频缓存已清理；分离音源和采音预览已清除。'; this.render();
   }
   async action(task) { try { return await task(); } catch (error) { if (error.name === 'AbortError' && this.sources.selecting) return; this.statusText = error.name === 'AbortError' ? '操作已取消，可重新开始。' : error.message; this.notify(this.statusText, error.name === 'AbortError' ? 'warning' : 'error'); if (this.message) this.message.textContent = this.statusText; } finally { this.render(); } }
   async refreshEnvironment() {
     if (!this.sources.separator.bridge || this.checkedEnvironment || this.configuring) return;
-    this.checkedEnvironment = true; await this.action(() => this.environment('probe'));
+    this.checkedEnvironment = true; await this.action(async () => {
+      if (!await prepareAudioStorage()) { this.checkedEnvironment = false; this.statusText = '尚未选择音频工具存放位置，未启动安装或分离。'; return; }
+      await this.environment('probe');
+    });
   }
   async environment(action) {
     if (this.configuring) return; this.configuring = true; this.installLog = []; this.statusText = action === 'probe' ? '正在检查分离环境…' : '正在准备声部分离环境…'; this.render();
@@ -40,6 +56,10 @@ export class AudioSourcesPanel {
     const guide = node('div', '', 'audio-source-guide');
     guide.append(node('p', desktop ? '首次：准备环境 → 分离音乐 → 选择声部。安装只做一次，不需要先装 Python。' : '网页端：先用桌面端或外部工具分离 → 导入声部 → 选择音源。这里不会自动上传音乐。', 'hint'));
     const guideActions = node('div', '', 'audio-source-actions'); guideActions.append(this.button('使用指南', () => showAudioSeparationGuide(desktop)));
+    if (globalThis.rpenAudioStorage?.version === 1) {
+      const clear = this.button('清理音频缓存…', async () => { await clearAudioCaches(this.notify); await this.cacheReset; }); clear.disabled = this.configuring || sources.busy || this.onsetPanel?.configuring || this.onsetPanel?.onsets.busy;
+      guideActions.append(this.button('模型与缓存位置…', () => showAudioStorage(this.notify)), clear);
+    }
     if (desktop) {
       this.environmentStatus = node('p', this.configuring ? '正在准备或检查…' : this.environmentInfo?.ready ? '本机环境已就绪' : this.environmentInfo ? '本机环境尚未就绪' : '打开页面后自动检查本机环境', 'hint'); this.environmentStatus.setAttribute('role', 'status'); guide.append(this.environmentStatus);
       const install = this.button(this.configuring ? '正在准备…' : this.environmentInfo?.ready ? '重新准备分离环境' : '一键准备分离环境', () => this.environment('install')); install.disabled = this.configuring || sources.busy || this.environmentInfo?.autoInstallSupported === false; guideActions.prepend(install);

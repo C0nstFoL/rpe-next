@@ -3,10 +3,10 @@ import { mkdir, readFile, writeFile, stat } from 'node:fs/promises';
 import { resolve, join, isAbsolute } from 'node:path';
 
 export class PythonAudioRuntime {
-  constructor(root, { script, python, progress = () => {}, launcher = spawn } = {}) {
-    this.root = resolve(root); this.script = script; this.python = python; this.progress = progress; this.launcher = launcher;
+  constructor(root, { script, python, dataRoot = root, progress = () => {}, launcher = spawn } = {}) {
+    this.root = resolve(root); this.dataRoot = resolve(dataRoot); this.script = script; this.python = python; this.progress = progress; this.launcher = launcher;
   }
-  environment() { return { ...process.env, PYTHONIOENCODING: 'utf-8', HF_HOME: join(this.root, 'models', 'huggingface'), TORCH_HOME: join(this.root, 'models', 'torch'), HF_HUB_DISABLE_TELEMETRY: '1', HF_HUB_DISABLE_XET: '1', OMP_NUM_THREADS: '4', MKL_NUM_THREADS: '4' }; }
+  environment() { return { ...process.env, PYTHONIOENCODING: 'utf-8', HF_HOME: join(this.dataRoot, 'models', 'huggingface'), TORCH_HOME: join(this.dataRoot, 'models', 'torch'), TMP: join(this.dataRoot, 'temp'), TEMP: join(this.dataRoot, 'temp'), TMPDIR: join(this.dataRoot, 'temp'), PIP_CACHE_DIR: join(this.dataRoot, 'pip-cache'), TORCHINDUCTOR_CACHE_DIR: join(this.dataRoot, 'kernel-cache'), CUDA_CACHE_PATH: join(this.dataRoot, 'kernel-cache', 'cuda'), XDG_CACHE_HOME: join(this.dataRoot, 'download-cache'), HF_HUB_DISABLE_TELEMETRY: '1', HF_HUB_DISABLE_XET: '1', OMP_NUM_THREADS: '4', MKL_NUM_THREADS: '4' }; }
   async configuredPython() {
     if (this.python) return this.python;
     try { const value = JSON.parse(await readFile(join(this.root, 'config.json'), 'utf8')); if (isAbsolute(value.python)) return value.python; } catch (error) { if (error.code !== 'ENOENT') throw error; }

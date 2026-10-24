@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, mkdtemp, open, rm, rename, readdir, lstat, stat } from 'node:fs/promises';
 import { resolve, join, dirname, sep, isAbsolute } from 'node:path';
 import { PythonAudioRuntime } from './python-audio-runtime.mjs';
+import { withAudioStorage } from './audio-storage.mjs';
 
 export const DDC_REVISION = 'd02aad36297a90e00848c32f6492fad1b43b7912';
 const CHUNK = 1024 ** 2, VERSION = `ddc-${DDC_REVISION}-aligned-v1`;
@@ -10,7 +11,8 @@ const aborted = () => Object.assign(Error('起音检测已取消'), { name: 'Abo
 export class AudioOnsetService extends PythonAudioRuntime {
   constructor(root, options = {}) { super(root, options); this.jobs = new Map(); this.results = new Map(); this.maxDuration = options.maxDuration ?? 183; }
   async initialize() {
-    const parent = join(this.root, 'jobs'); let entries;
+    await mkdir(join(this.dataRoot, 'temp'), { recursive: true });
+    const parent = join(this.dataRoot, 'jobs'); let entries;
     try { entries = await readdir(parent, { withFileTypes: true }); } catch (error) { if (error.code === 'ENOENT') return; throw error; }
     for (const entry of entries) if (entry.isDirectory() && !entry.isSymbolicLink() && /^job-[a-zA-Z0-9]+$/.test(entry.name)) await rm(join(parent, entry.name), { recursive: true, force: true });
   }
@@ -22,10 +24,10 @@ export class AudioOnsetService extends PythonAudioRuntime {
     if (this.jobs.size || this.installing || this.beginning) throw Error('已有起音检测或安装任务'); this.installing = true; this.installController = new AbortController(); const signal = this.installController.signal;
     try {
       if (!isAbsolute(basePython) || !(await stat(basePython)).isFile()) throw Error('请选择 Python 可执行文件');
-      await mkdir(this.root, { recursive: true }); const runtime = join(this.root, 'runtime'), temporary = join(this.root, 'temp'); await mkdir(temporary, { recursive: true });
+      await mkdir(this.root, { recursive: true }); const runtime = join(this.root, 'runtime'), temporary = join(this.dataRoot, 'temp'); await mkdir(temporary, { recursive: true });
       await this.run(basePython, ['-m', 'venv', runtime], { signal, id: 'environment', timeout: 180000 });
       const python = join(runtime, process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
-      await this.run(python, ['-m', 'pip', 'install', '--disable-pip-version-check', `https://github.com/chrisdonahue/ddc_onset/archive/${DDC_REVISION}.zip`, 'scipy>=1.11,<2', 'numpy>=1.26,<3'], { signal, id: 'environment', env: { ...this.environment(), TMP: temporary, TEMP: temporary, PIP_CACHE_DIR: join(this.root, 'pip-cache') } });
+      await this.run(python, ['-m', 'pip', 'install', '--disable-pip-version-check', `https://github.com/chrisdonahue/ddc_onset/archive/${DDC_REVISION}.zip`, 'scipy>=1.11,<2', 'numpy>=1.26,<3'], { signal, id: 'environment', env: this.environment() });
       await this.configure(python); return this.probe();
     } finally { this.installing = false; this.installController = null; }
   }
@@ -34,8 +36,8 @@ export class AudioOnsetService extends PythonAudioRuntime {
     if (!/^[a-zA-Z0-9-]{1,80}$/.test(id) || !Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 192000 || !Number.isSafeInteger(frames) || frames < 1 || frames > sampleRate * this.maxDuration || !['auto', 'cpu', 'cuda'].includes(device)) throw Error('起音检测参数无效');
     this.beginning = true;
     try {
-      const python = await this.configuredPython(); await mkdir(join(this.root, 'jobs'), { recursive: true });
-      const directory = await mkdtemp(join(this.root, 'jobs', 'job-')), token = randomUUID(), file = await open(join(directory, 'input.f32'), 'wx');
+      const python = await this.configuredPython(); await mkdir(join(this.dataRoot, 'jobs'), { recursive: true });
+      const directory = await mkdtemp(join(this.dataRoot, 'jobs', 'job-')), token = randomUUID(), file = await open(join(directory, 'input.f32'), 'wx');
       this.jobs.set(token, { id, sampleRate, frames, device, python, directory, file, bytes: frames * 4, written: 0, hash: createHash('sha256'), controller: new AbortController() }); return token;
     } finally { this.beginning = false; }
   }
@@ -56,7 +58,7 @@ export class AudioOnsetService extends PythonAudioRuntime {
     const job = this.jobs.get(token); if (!job || job.running || job.writing || job.written !== job.bytes) throw Error('音频尚未完整上传'); job.running = true;
     try {
       await job.file.close(); job.file = null;
-      const signature = createHash('sha256').update(`${job.hash.digest('hex')}:${job.sampleRate}:${VERSION}`).digest('hex'), directory = join(this.root, 'cache', signature);
+      const signature = createHash('sha256').update(`${job.hash.digest('hex')}:${job.sampleRate}:${VERSION}`).digest('hex'), directory = join(this.dataRoot, 'cache', signature);
       let result; try { result = await this.manifest(directory); } catch {}
       const cacheHit = Boolean(result);
       if (!result) {
@@ -66,7 +68,7 @@ export class AudioOnsetService extends PythonAudioRuntime {
         if (job.controller.signal.aborted) throw aborted(); if (!result) throw Error('起音模型没有返回结果'); result.signatureVersion = VERSION;
         await writeFile(join(job.directory, 'manifest.json'), JSON.stringify(result)); await this.manifest(job.directory);
         await rm(request.input); await rm(join(job.directory, 'request.json')); await mkdir(dirname(directory), { recursive: true });
-        if (dirname(directory) !== resolve(this.root, 'cache') || !/^[a-f0-9]{64}$/.test(signature)) throw Error('起音缓存路径异常');
+        if (dirname(directory) !== resolve(this.dataRoot, 'cache') || !/^[a-f0-9]{64}$/.test(signature)) throw Error('起音缓存路径异常');
         await rm(directory, { recursive: true, force: true }); await rename(job.directory, directory);
       }
       if (job.controller.signal.aborted) throw aborted(); const cacheId = randomUUID(); this.results.set(cacheId, directory); if (this.results.size > 32) this.results.delete(this.results.keys().next().value);
@@ -74,9 +76,9 @@ export class AudioOnsetService extends PythonAudioRuntime {
     } finally { await this.cleanup(token); }
   }
   async read(cacheId) { const directory = this.results.get(cacheId); if (!directory) throw Error('起音缓存句柄无效'); await this.manifest(directory); return new Uint8Array(await readFile(join(directory, 'salience.f32'))); }
-  async cleanup(token) { const job = this.jobs.get(token); if (!job) return; await job.file?.close().catch(() => {}); if (resolve(job.directory).startsWith(resolve(this.root, 'jobs') + sep)) await rm(job.directory, { recursive: true, force: true }).catch(() => {}); this.jobs.delete(token); }
+  async cleanup(token) { const job = this.jobs.get(token); if (!job) return; await job.file?.close().catch(() => {}); if (resolve(job.directory).startsWith(resolve(this.dataRoot, 'jobs') + sep)) await rm(job.directory, { recursive: true, force: true }).catch(() => {}); this.jobs.delete(token); }
   async cancel(token) { if (token === 'environment') { this.installController?.abort(); return; } const job = this.jobs.get(token); if (!job) return; job.controller.abort(); if (!job.running && !job.writing) await this.cleanup(token); }
-  async clear() { if (this.jobs.size) throw Error('请先结束起音检测'); const directory = join(this.root, 'cache'); if (dirname(directory) !== this.root) throw Error('缓存路径异常'); await rm(directory, { recursive: true, force: true }); this.results.clear(); }
+  async clear() { if (this.jobs.size) throw Error('请先结束起音检测'); const directory = join(this.dataRoot, 'cache'); if (dirname(directory) !== this.dataRoot) throw Error('缓存路径异常'); await rm(directory, { recursive: true, force: true }); this.results.clear(); }
   async close() { this.installController?.abort(); await Promise.allSettled([...this.jobs.keys()].map(token => this.cancel(token))); }
 }
 
@@ -84,14 +86,16 @@ export function installAudioOnsets({ ipcMain, service, origin, window: getWindow
   ipcMain.handle('rpen-audio-onsets', async (event, { action, args = [] } = {}) => {
     try {
       if (event.sender !== getWindow()?.webContents || event.senderFrame !== event.sender.mainFrame || !event.senderFrame.url.startsWith(origin + '/') || !Array.isArray(args)) throw Error('无权限');
-      if (action === 'choosePython' || action === 'install') {
-        if (action === 'install') { const answer = await dialog.showMessageBox(getWindow(), { type: 'question', message: '安装独立 DDC 采音环境？', detail: '选择本机 Python 3.10 或以上版本，另建虚拟环境安装 PyTorch、DDC 和 SciPy。可能下载数 GB，音频仅在本机分析。', buttons: ['安装', '取消'], defaultId: 1, cancelId: 1 }); if (answer.response !== 0) return { ok: true, result: null }; }
-        const selected = await dialog.showOpenDialog(getWindow(), { title: action === 'install' ? '选择基础 Python' : '选择已安装 DDC onset 的 Python', properties: ['openFile'] }); if (selected.canceled) return { ok: true, result: null };
-        if (action === 'install') return { ok: true, result: await service.install(selected.filePaths[0]) };
-        await service.configure(selected.filePaths[0]); return { ok: true, result: await service.probe() };
-      }
-      if (!['probe', 'begin', 'write', 'execute', 'read', 'cancel', 'clear'].includes(action)) throw Error('不支持的起音检测操作');
-      return { ok: true, result: await service[action](...args) };
+      return await withAudioStorage(service, async () => {
+        if (action === 'choosePython' || action === 'install') {
+          if (action === 'install') { const answer = await dialog.showMessageBox(getWindow(), { type: 'question', message: '安装独立 DDC 采音环境？', detail: '选择本机 Python 3.10 或以上版本，另建虚拟环境安装 PyTorch、DDC 和 SciPy。可能下载数 GB，音频仅在本机分析。', buttons: ['安装', '取消'], defaultId: 1, cancelId: 1 }); if (answer.response !== 0) return { ok: true, result: null }; }
+          const selected = await dialog.showOpenDialog(getWindow(), { title: action === 'install' ? '选择基础 Python' : '选择已安装 DDC onset 的 Python', properties: ['openFile'] }); if (selected.canceled) return { ok: true, result: null };
+          if (action === 'install') return { ok: true, result: await service.install(selected.filePaths[0]) };
+          await service.configure(selected.filePaths[0]); return { ok: true, result: await service.probe() };
+        }
+        if (!['probe', 'begin', 'write', 'execute', 'read', 'cancel', 'clear'].includes(action)) throw Error('不支持的起音检测操作');
+        return { ok: true, result: await service[action](...args) };
+      }, action);
     } catch (error) { return { ok: false, error: { name: error.name, message: error.message } }; }
   });
 }

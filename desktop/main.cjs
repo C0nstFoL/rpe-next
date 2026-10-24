@@ -45,19 +45,27 @@ else {
     const agentWorkspace = new AgentWorkspaceService(resolve(app.getPath('userData'), 'agent-workspaces'), { fetcher: (...args) => net.fetch(...args), openFolder: async path => { const error = await shell.openPath(path); if (error) throw Error(error); } });
     app.on('before-quit', installAgentWorkspace({ ipcMain, service: agentWorkspace, origin, window: () => mainWindow }));
     const { atomicJson } = await import(pathToFileURL(resolve(__dirname, 'native-store.mjs')).href);
+    const { AudioStorage, installAudioStorage } = await import(pathToFileURL(resolve(__dirname, 'audio-storage.mjs')).href);
+    const audioRoots = {
+      separation: smokeAudio && process.env.RPE_AUDIO_TEST_CACHE ? resolve(process.env.RPE_AUDIO_TEST_CACHE) : resolve(app.getPath('userData'), 'audio-separation'),
+      onsets: smokeAudio && process.env.RPE_ONSET_TEST_CACHE ? resolve(process.env.RPE_ONSET_TEST_CACHE) : resolve(app.getPath('userData'), 'audio-onsets'),
+      mapper: (smokeAudio || smokeMapper) && process.env.RPE_MAPPER_TEST_CACHE ? resolve(process.env.RPE_MAPPER_TEST_CACHE) : resolve(app.getPath('userData'), 'audio-mapper')
+    };
+    const audioStorage = await new AudioStorage(resolve(app.getPath('userData'), 'audio-storage.json'), audioRoots, { progress: value => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('rpen-audio-storage-progress', value); } }).initialize();
+    installAudioStorage({ ipcMain, service: audioStorage, origin, window: () => mainWindow, dialog, shell });
     const { AudioSeparationService, installAudioSeparation } = await import(pathToFileURL(resolve(__dirname, 'audio-separation.mjs')).href);
-    const audioSeparation = new AudioSeparationService(smokeAudio && process.env.RPE_AUDIO_TEST_CACHE ? resolve(process.env.RPE_AUDIO_TEST_CACHE) : resolve(app.getPath('userData'), 'audio-separation'), { script: resolve(__dirname, 'separate-audio.py'), python: smokeAudio ? process.env.RPE_AUDIO_TEST_PYTHON : undefined, fetcher: (...args) => net.fetch(...args), progress: value => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('rpen-audio-separation-progress', value); } });
-    await audioSeparation.initialize();
+    const audioSeparation = new AudioSeparationService(audioRoots.separation, { script: resolve(__dirname, 'separate-audio.py'), python: smokeAudio ? process.env.RPE_AUDIO_TEST_PYTHON : undefined, fetcher: (...args) => net.fetch(...args), progress: value => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('rpen-audio-separation-progress', value); } });
+    audioStorage.attach('separation', audioSeparation); if (!audioStorage.error) await audioSeparation.initialize();
     installAudioSeparation({ ipcMain, service: audioSeparation, origin, window: () => mainWindow, dialog });
     app.on('before-quit', () => audioSeparation.close());
     const { AudioOnsetService, installAudioOnsets } = await import(pathToFileURL(resolve(__dirname, 'audio-onsets.mjs')).href);
-    const audioOnsets = new AudioOnsetService(smokeAudio && process.env.RPE_ONSET_TEST_CACHE ? resolve(process.env.RPE_ONSET_TEST_CACHE) : resolve(app.getPath('userData'), 'audio-onsets'), { script: resolve(__dirname, 'detect-onsets.py'), python: smokeAudio ? process.env.RPE_ONSET_TEST_PYTHON : undefined, progress: value => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('rpen-audio-onsets-progress', value); } });
-    await audioOnsets.initialize();
+    const audioOnsets = new AudioOnsetService(audioRoots.onsets, { script: resolve(__dirname, 'detect-onsets.py'), python: smokeAudio ? process.env.RPE_ONSET_TEST_PYTHON : undefined, progress: value => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('rpen-audio-onsets-progress', value); } });
+    audioStorage.attach('onsets', audioOnsets); if (!audioStorage.error) await audioOnsets.initialize();
     installAudioOnsets({ ipcMain, service: audioOnsets, origin, window: () => mainWindow, dialog });
     app.on('before-quit', () => audioOnsets.close());
     const { AudioMapperService, installAudioMapper } = await import(pathToFileURL(resolve(__dirname, 'audio-mapper.mjs')).href);
-    const audioMapper = new AudioMapperService((smokeAudio || smokeMapper) && process.env.RPE_MAPPER_TEST_CACHE ? resolve(process.env.RPE_MAPPER_TEST_CACHE) : resolve(app.getPath('userData'), 'audio-mapper'), { script: resolve(__dirname, 'map-audio.py'), python: smokeAudio || smokeMapper ? process.env.RPE_MAPPER_TEST_PYTHON : undefined, source: smokeAudio || smokeMapper ? process.env.RPE_MAPPER_TEST_SOURCE : undefined, progress: value => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('rpen-audio-mapper-progress', value); } });
-    await audioMapper.initialize();
+    const audioMapper = new AudioMapperService(audioRoots.mapper, { script: resolve(__dirname, 'map-audio.py'), python: smokeAudio || smokeMapper ? process.env.RPE_MAPPER_TEST_PYTHON : undefined, source: smokeAudio || smokeMapper ? process.env.RPE_MAPPER_TEST_SOURCE : undefined, progress: value => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('rpen-audio-mapper-progress', value); } });
+    audioStorage.attach('mapper', audioMapper); if (!audioStorage.error) await audioMapper.initialize();
     installAudioMapper({ ipcMain, service: audioMapper, origin, window: () => mainWindow, dialog });
     app.on('before-quit', () => audioMapper.close());
     const { AgentCredentialVault, installAgentCredentials } = await import(pathToFileURL(resolve(__dirname, 'agent-credentials.mjs')).href);

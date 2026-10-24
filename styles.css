@@ -262,6 +262,12 @@ small { font-size: 11px; color: #aaa; font-weight: 400; }
 .audio-source-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .audio-source-actions > button { flex: 1 1 auto; min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .audio-separation-status,.audio-onsets-status { white-space: pre-wrap; overflow-wrap: anywhere; }
+.audio-storage-panel { display: grid; gap: 12px; min-width: 0; }
+.audio-storage-tool { min-width: 0; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.audio-storage-tool h3 { margin: 0 0 8px; }
+.audio-storage-path { display: block; overflow-wrap: anywhere; white-space: pre-wrap; margin-top: 6px; }
+.audio-storage-message { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.audio-storage-panel progress { width: 100%; }
 .audio-onsets-panel { min-width: 0; border-top: 1px solid var(--line, #555); margin: 12px; }
 .audio-onsets-panel > details { margin: 10px 0; }
 .audio-source-list { display: grid; gap: 5px; margin: 10px 0; min-width: 0; }
