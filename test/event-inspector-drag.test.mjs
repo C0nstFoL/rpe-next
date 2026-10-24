@@ -105,6 +105,30 @@ const drag = (window, label, fromX, toX) => {
 // Moves after the first one only carry raw deltas because the pointer is locked.
 const nudge = (window, movementX) => window.dispatch('pointermove', { pointerId: 1, pointerType: 'mouse', buttons: 1, clientX: 0, clientY: 40, movementX });
 
+test('缓动左右边界位于曲线预览下方、Bezier上方，并保留实时编辑', () => {
+  const { container, restore } = setup();
+  try {
+    const curve = container.children.find(node => node.className === 'easing-preview');
+    const bezier = container.children.find(node => node.children?.some(child => child.getAttribute?.('aria-label') === '启用 Bezier'));
+    assert.ok(container.children.indexOf(curve) < container.children.indexOf(field(container, 'easingLeft')));
+    assert.ok(container.children.indexOf(field(container, 'easingLeft')) < container.children.indexOf(field(container, 'easingRight')));
+    assert.ok(container.children.indexOf(field(container, 'easingRight')) < container.children.indexOf(bezier));
+  } finally { restore(); }
+});
+
+test('透明度文本允许负整数，保留255上限与撤销', () => {
+  const { container, session, errors, restore } = setup(1, { sampler: null });
+  try {
+    session.eventSelection = new Set(['alphaEvents:0']); session.liveEventEdit = false;
+    renderEventInspector(session, new TempoMap(session.chart.BPMList), () => 0, error => errors.push(error), () => {}, null);
+    const input = field(container, 'start').children.at(-1).children[0]; assert.equal(input.min, '');
+    input.value = '-128.9'; input.oninput({}); assert.equal(session.line.eventLayers[0].alphaEvents[0].start, -128);
+    session.travel('undo'); assert.equal(session.line.eventLayers[0].alphaEvents[0].start, 255);
+    input.value = '300'; input.oninput({}); assert.equal(session.line.eventLayers[0].alphaEvents[0].start, 255);
+    assert.deepEqual(errors, []);
+  } finally { restore(); }
+});
+
 test('事件面板的数值字段名称可拖动，并把每一步交给取样器实时预览', () => {
   const { sampler, container, window, errors, restore } = setup();
   try {

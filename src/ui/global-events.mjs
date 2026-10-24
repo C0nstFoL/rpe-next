@@ -17,6 +17,7 @@ class GlobalTimeline extends Timeline {
     return { channelWidth, left: column.left, x: column.left + (channelWidth - width) / 2, width };
   }
   eventChannelAt(x) { return this.owner.geometry?.findIndex(column => x >= column.left && x < column.left + column.width) ?? -1; }
+  judgementSegments(width, height, playBeat) { return (this.owner.geometry ?? []).map(column => ({ left: column.left, right: column.left + column.width, y: this.vertical(playBeat, height) })); }
   grid(context, width, height, playBeat) {
     context.save(); context.beginPath();
     for (const column of this.owner.geometry ?? []) context.rect(column.left, 0, column.width, height);
@@ -95,7 +96,7 @@ export class GlobalEventsEditor {
   }
   sync() {
     const source = this.context.timeline;
-    for (const key of ['origin', 'scale', 'division', 'judgementOffset', 'judgementColor', 'barWidth', 'barAlpha', 'eventBarWidth', 'eventOpacity', 'seamlessEvents', 'drawEventCurves', 'eventValueFontSize', 'eventCurveThreshold', 'eventValueThreshold', 'scrollSpeed', 'selectionInterval']) this.timeline[key] = source[key];
+    for (const key of ['origin', 'scale', 'division', 'judgementOffset', 'judgementColor', 'barWidth', 'barAlpha', 'eventBarWidth', 'eventOpacity', 'seamlessEvents', 'drawEventCurves', 'eventValueFontSize', 'eventCurveThreshold', 'eventValueThreshold', 'scrollSpeed', 'selectionInterval', 'rpeEventDrag', 'eventEndpointDragHeld']) this.timeline[key] = source[key];
     this.timeline.tempo = this.context.tempo;
     const columns = this.document.columns;
     if (this.labelColumns !== columns) {
@@ -128,6 +129,7 @@ export class GlobalEventsEditor {
         context.moveTo(line, 0); context.lineTo(line, this.canvas.clientHeight);
       }
       context.stroke();
+      this.timeline.drawJudgement(context, this.canvas.clientWidth, this.canvas.clientHeight, beat, 'events');
     }
     else { const { context, width, height } = prepareCanvas(this.canvas); this.timeline.grid(context, width, height, beat); context.fillStyle = '#dddddd'; context.font = '14px RPE,sans-serif'; context.fillText('暂无可用的全局事件类型', 20, 45); }
     this.drawDensity();

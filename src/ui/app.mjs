@@ -130,6 +130,7 @@ const displayFields = [
   ['force-simple-noise', 'forceSimpleNoise', false],
   ['judgement-offset', 'judgementOffset', 92],
   ['judgement-color', 'judgementColor', '#ffffff'],
+  ['rpe-event-drag', 'rpeEventDrag', DEFAULT_EDITOR_PREFERENCES.rpeEventDrag],
   ['default-line-thickness', 'lineScale', 1.5],
   ['line-switcher-enabled', 'lineSwitcher', true],
   ['clipboard-history-enabled', 'clipboardHistory', true],
@@ -876,6 +877,7 @@ function renderSession() {
   session.tempo = tempo; session.division = timeline.division;
   session.cutDensity = Number(element('#event-cut-density').value);
   session.dragSensitivity = Number(element('#event-drag-sensitivity').value);
+  session.rpeEventDrag = timeline.rpeEventDrag;
   updateLineInfo();
   session.eventWheelSteps = Object.fromEntries(['moveXEvents', 'moveYEvents', 'rotateEvents', 'alphaEvents', 'speedEvents', 'scaleXEvents', 'scaleYEvents'].flatMap((key, index) => Number.isFinite(preferences.originalSettings.scrollValueIncrement?.[index]) ? [[key, preferences.originalSettings.scrollValueIncrement[index]]] : []));
   timeline.origin = currentBeat();
@@ -1662,6 +1664,17 @@ window.addEventListener('keydown', event => {
 }, true);
 window.addEventListener('keyup', event => { if (!lineSwitchModifierMatches(event)) lineSwitchDigits = 0; }, true);
 window.addEventListener('blur', () => { lineSwitchDigits = 0; });
+function setEventEndpointDragHeld(held) {
+  if (!held) for (const interaction of [timeline.eventInteraction, globalEvents.timeline.eventInteraction]) if (interaction.drag?.endpoint && !interaction.drag.frozen) interaction.drag.frozen = interaction.previewEvent(interaction.drag.event);
+  timeline.eventEndpointDragHeld = globalEvents.timeline.eventEndpointDragHeld = held;
+  timeline.eventInteraction.updateCursor(); globalEvents.timeline.eventInteraction.updateCursor(); noiseEditor.syncHover(); invalidate();
+}
+window.addEventListener('blur', () => {
+  setEventEndpointDragHeld(false);
+  if (timeline.eventInteraction.drag?.endpoint) timeline.cancelPlacement();
+  if (globalEvents.timeline.eventInteraction.drag?.endpoint) globalEvents.timeline.cancelPlacement();
+  if (noiseEditor.drag?.endpoint) noiseEditor.cancelGesture();
+});
 window.addEventListener('keydown', async event => {
   if (mods?.runtime.locks.size) return;
   const target = event.target;
@@ -1671,6 +1684,10 @@ window.addEventListener('keydown', async event => {
   const hasMultiSelection = [...(session.multiLineSelection?.values() ?? [])].some(values => values.size) || [...(session.multiEventSelection?.values() ?? [])].some(values => values.size);
   const hasSelection = globalEvents.active ? globalEvents.selection.size > 0 : noiseEditor.active ? noiseEditor.selection.size > 0 : Boolean(session.selection.size || session.eventSelection.size || hasMultiSelection);
   const action = shortcutAction(event, preferences, area, { hasSelection: hasSelection && !preview.visible });
+  if (action === 'DragLong') {
+    if (timeline.rpeEventDrag === true && !preview.visible && !isTextEntry(event.target)) { setEventEndpointDragHeld(true); event.preventDefault(); event.stopImmediatePropagation(); }
+    return;
+  }
   if (globalEvents.active) {
     try { if (globalEvents.action(action, event)) { event.preventDefault(); event.stopImmediatePropagation(); return; } }
     catch (error) { event.preventDefault(); reportError(error); return; }
@@ -1751,6 +1768,7 @@ window.addEventListener('keydown', async event => {
   } catch (error) { event.preventDefault(); reportError(error); }
 }, true);
 window.addEventListener('keyup', event => {
+  if (timeline.eventEndpointDragHeld && shortcutReleased(event, preferences.hotkeys.DragLong ?? DEFAULT_HOTKEYS.DragLong)) setEventEndpointDragHeld(false);
   if (mods?.runtime.locks.size) return;
   pasteGesture.up(event);
   if (timeline.clipboardMode?.mirror || timeline.clipboardMode?.keepTime) { timeline.clipboardMode = {}; invalidate(); }
@@ -2024,6 +2042,8 @@ function applyDisplaySettings() {
   timeline.judgementColor = element('#judgement-color').value;
   timeline.eventValueFontSize = Number(element('#event-value-size').value); timeline.eventValueThreshold = Number(element('#event-value-threshold').value); timeline.eventCurveThreshold = Number(element('#event-curve-threshold').value); timeline.eventOpacity = Number(element('#event-opacity').value); timeline.eventBarWidth = Number(element('#event-bar-width').value);
   timeline.seamlessEvents = element('#seamless-events').checked;
+  timeline.rpeEventDrag = globalEvents.timeline.rpeEventDrag = element('#rpe-event-drag').checked;
+  if (!timeline.rpeEventDrag) setEventEndpointDragHeld(false);
   timeline.drawEventCurves = element('#draw-event-curves').checked;
   timeline.selectionInterval = globalEvents.timeline.selectionInterval = Number(element('#selection-interval').value);
   selectionIntervalPanel.sync();

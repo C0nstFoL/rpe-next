@@ -69,11 +69,29 @@ function cumulativeTrack(track, type, center) {
 const sampleOverrides = new WeakMap();
 export function setNoiseSampleOverride(area, overrides) { sampleOverrides.set(area, overrides); }
 
+export function noiseActivationIntervals(area, tempo) {
+  const appear = tempo.seconds(area.appearTime), disappear = tempo.seconds(area.disappearTime);
+  const intervals = (area.activeIntervals ?? []).flatMap(interval => {
+    const originalStart = tempo.seconds(interval.startTime), originalEnd = tempo.seconds(interval.endTime);
+    const start = Math.max(appear, originalStart), end = Math.min(disappear, originalEnd);
+    return end > start || originalStart === originalEnd && start === end ? [{ start, end, readyFlash: readyFlashSeconds(interval.readyFlash) }] : [];
+  }).sort((left, right) => left.start - right.start);
+  const merged = [];
+  for (const interval of intervals) {
+    const previous = merged.at(-1);
+    if (previous?.start === interval.start) { previous.end = Math.max(previous.end, interval.end); previous.readyFlash = Math.max(previous.readyFlash, interval.readyFlash); }
+    else merged.push(interval);
+  }
+  return merged;
+}
+
 export class NoiseAreaRuntime {
   constructor(area, tempo) {
     this.area = area; this.tempo = tempo; this.center = noiseCenter(area);
     this.appear = tempo.seconds(area.appearTime); this.disappear = tempo.seconds(area.disappearTime);
-    this.intervals = (area.activeIntervals ?? []).map(interval => ({ start: Math.max(this.appear, tempo.seconds(interval.startTime)), end: Math.min(this.disappear, tempo.seconds(interval.endTime)), readyFlash: readyFlashSeconds(interval.readyFlash) })).filter(interval => interval.end > interval.start).sort((left, right) => left.start - right.start);
+    this.intervals = noiseActivationIntervals(area, tempo);
+    this.activations = this.intervals.filter(interval => interval.end > interval.start);
+    if (this.activations.length === this.intervals.length) this.activations = this.intervals;
     this.tracks = Object.fromEntries(NOISE_TRACKS.slice(1).map(([type]) => [type, new EventTrack(area[type], tempo)]));
     this.prefixes = Object.fromEntries(['scaleXEvents', 'scaleYEvents', 'rotateEvents'].map(type => [type, cumulativeTrack(this.tracks[type], type, this.center)]));
     const left = Math.min(area.bottomLeft.x, area.topRight.x); const right = Math.max(area.bottomLeft.x, area.topRight.x);
@@ -85,8 +103,8 @@ export class NoiseAreaRuntime {
     return { value: entry ? track.sample(entry, seconds) : fallback, event: entry?.event };
   }
   sample(seconds, overrides = sampleOverrides.get(this.area) ?? {}) {
-    const activeIndex = upperBound(this.intervals, seconds + TIME_EPSILON, interval => interval.start) - 1;
-    const active = this.intervals[activeIndex]; const next = this.intervals[activeIndex + 1];
+    const activeIndex = upperBound(this.activations, seconds + TIME_EPSILON, interval => interval.start) - 1;
+    const active = this.activations[activeIndex]; const next = this.intervals[this.activations === this.intervals ? activeIndex + 1 : upperBound(this.intervals, seconds + TIME_EPSILON, interval => interval.start)];
     let state = active && seconds + TIME_EPSILON < active.end ? 'active' : next?.readyFlash > 0 && seconds + TIME_EPSILON >= next.start - next.readyFlash ? 'ready' : 'disabled';
     if (seconds + TIME_EPSILON < this.appear) state = 'hiddenBefore';
     if (seconds + TIME_EPSILON >= this.disappear) state = 'hiddenAfter';

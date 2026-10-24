@@ -1,5 +1,6 @@
 import { beatValue, fromNumber } from '../core/beat.mjs';
-import { eventKey, eventList, eventListAt, selectedEvents, selectEvent, transformEvents, placedEvent, insertEventAt } from '../application/event-commands.mjs';
+import { eventKey, eventList, eventListAt, selectedEvents, selectedEventEntries, selectEvent, transformEvents, placedEvent, insertEventAt } from '../application/event-commands.mjs';
+import { dragEventEndpoint } from '../core/event-drag.mjs';
 import { strokeIntersects } from '../core/editor-display.mjs';
 import { shaderEventLanes } from '../core/shader-events.mjs';
 import { captureSelection, editCapturedSelection, commitSelectionEdit } from '../application/batch-edit.mjs';
@@ -17,6 +18,41 @@ export class EventInteraction {
   }
 
   hit(point) { return this.timeline.eventRects.findLast(rectangle => point.x >= rectangle.x && point.x <= rectangle.x + rectangle.width && point.y >= rectangle.y && point.y <= rectangle.y + rectangle.height); }
+  endpointTarget() {
+    if (this.timeline.rpeEventDrag !== true || !this.timeline.eventEndpointDragHeld || this.pending) return null;
+    const entries = selectedEventEntries(this.timeline.getSession()); return entries.length === 1 ? entries[0] : null;
+  }
+  consumeContextMenu() { const suppress = this.suppressContextMenu || this.drag?.endpoint; this.suppressContextMenu = false; return Boolean(suppress); }
+  updateCursor(point = this.timeline.eventCursor) {
+    if (!point) return;
+    const hit = this.hit(point), edge = this.timeline.rpeEventDrag !== true && hit && (Math.abs(point.y - hit.y) < 6 || Math.abs(point.y - hit.y - hit.height) < 6);
+    this.canvas.style.cursor = this.drag?.endpoint || this.endpointTarget() || edge ? 'ns-resize' : hit ? 'move' : this.timeline.panEventColumns ? 'grab' : 'default';
+  }
+  previewEvent(event) {
+    const drag = this.drag; if (!drag) return event;
+    if (drag.endpoint) {
+      if (event !== drag.event) return event;
+      if (drag.frozen) return drag.frozen;
+      const timeline = this.timeline;
+      let beat;
+      if (timeline.getSession().multiLineActive && timeline.getSession().multiLineMode === 'events') {
+        const factor = timeline.factorForLine(drag.lineIndex);
+        const seconds = timeline.tempo.seconds(timeline.origin, factor) + (timeline.viewHeight() - timeline.judgementOffset - drag.current.y) / timeline.scale;
+        beat = Math.max(0, Math.round(timeline.tempo.beat(seconds, factor) * timeline.division) / timeline.division);
+      } else beat = timeline.eventBeatAt(drag.current.y, drag.type, true);
+      const next = dragEventEndpoint(event, drag.kind, beat); if (!timeline.eventEndpointDragHeld) drag.frozen = next; return next;
+    }
+    const delta = this.delta();
+    return { ...event, startTime: drag.kind === 'endTime' ? event.startTime : fromNumber(beatValue(event.startTime) + delta), endTime: drag.kind === 'startTime' ? event.endTime : fromNumber(beatValue(event.endTime) + delta) };
+  }
+  previewRectangles(rectangles, width) {
+    const drag = this.drag;
+    if (!drag?.endpoint || rectangles.some(rectangle => rectangle.type === drag.type && rectangle.index === drag.index && (rectangle.lineIndex ?? this.timeline.getSession().lineIndex) === drag.lineIndex)) return rectangles;
+    const channel = this.timeline.eventTypes.indexOf(drag.type); if (channel < 0) return rectangles;
+    const panelWidth = this.timeline.panelWidth(width, 'events'), bounds = this.timeline.eventColumnBounds(channel, panelWidth);
+    const offset = this.timeline.panelIndex(drag.lineIndex, 'events') * this.timeline.panelStride(width, 'events') - this.timeline.multiLineViewportOffset(width, 'events');
+    return [...rectangles, { type: drag.type, index: drag.index, lineIndex: drag.lineIndex, x: bounds.x + offset, width: bounds.width }];
+  }
   delta() {
     if (!this.drag?.anchor) return 0;
     const start = this.drag.anchor;
@@ -57,6 +93,15 @@ export class EventInteraction {
   down(event) {
     if (![0, 1, 2].includes(event.button)) return;
     event.preventDefault?.();
+    this.suppressContextMenu = false;
+    const endpoint = [0, 2].includes(event.button) && this.endpointTarget();
+    if (endpoint) {
+      const session = this.timeline.getSession(), point = this.timeline.point(event, this.canvas);
+      session.focus = 'events'; session.eventLayer = this.timeline.layer; this.timeline.hoverArea = 'events'; this.timeline.eventCursor = point; this.timeline.clipboardPointer = point;
+      this.canvas.focus({ preventScroll: true }); this.canvas.setPointerCapture(event.pointerId);
+      this.drag = { kind: event.button === 0 ? 'startTime' : 'endTime', endpoint: true, event: endpoint.event, type: endpoint.type, lineIndex: endpoint.lineIndex, index: endpoint.index, chart: session.chart, start: point, current: point };
+      this.suppressContextMenu = event.button === 2; this.updateCursor(point); this.timeline.changed(); return;
+    }
     if (event.button === 2) return;
     if (this.timeline.finishRectangle(event)) return;
     const session = this.timeline.getSession(); const point = this.timeline.point(event, this.canvas); const rectangle = this.hit(point);
@@ -88,7 +133,7 @@ export class EventInteraction {
     else if (!multiMode && (event.shiftKey || event.button === 1)) this.drag = { kind: 'rectangle', area: 'events', start: point, startFactor: this.timeline.factorForLine(session.lineIndex), startSeconds: this.timeline.timeAt(point.y), current: point, append: true, remove: false };
     else if (rectangle && event.button === 0) {
       selectEvent(session, rectangle.lineIndex ?? session.lineIndex, rectangle.type, rectangle.index, { toggle: event.ctrlKey });
-      const kind = Math.abs(point.y - rectangle.y) < 6 ? 'endTime' : Math.abs(point.y - (rectangle.y + rectangle.height)) < 6 ? 'startTime' : 'move';
+      const kind = this.timeline.rpeEventDrag !== true ? Math.abs(point.y - rectangle.y) < 6 ? 'endTime' : Math.abs(point.y - (rectangle.y + rectangle.height)) < 6 ? 'startTime' : 'move' : 'move';
       const selected = eventListAt(session, rectangle.lineIndex ?? session.lineIndex, rectangle.type)?.[rectangle.index];
       this.drag = { kind, type: rectangle.type, lineIndex: rectangle.lineIndex, start: point, current: point, anchor: selected?.[kind === 'endTime' ? 'endTime' : 'startTime'], originSeconds: this.timeline.tempo.seconds(this.timeline.origin, this.timeline.factorForLine(rectangle.lineIndex ?? session.lineIndex)) };
     } else if (!multiMode) this.drag = { kind: 'stroke', start: point, current: point, points: [point], remove: event.button === 2 };
@@ -100,6 +145,10 @@ export class EventInteraction {
     this.timeline.eventCursor = point;
     this.timeline.clipboardPointer = point;
     this.timeline.hoverArea = 'events';
+    if (this.drag?.endpoint) {
+      if (this.timeline.eventEndpointDragHeld) { this.drag.current = point; this.drag.moved ||= Math.hypot(point.x - this.drag.start.x, point.y - this.drag.start.y) > 3; }
+      this.updateCursor(point); this.timeline.changed(); return;
+    }
     if (this.drag) {
       const previous = this.drag.current; this.drag.current = point; this.drag.currentWorldX = point.x + this.timeline.multiLineViewportOffset(this.canvas.clientWidth, 'events');
       if (this.drag.startFactor !== undefined) this.drag.currentSeconds = this.timeline.tempo.seconds(this.timeline.origin, this.drag.startFactor) + (this.timeline.viewHeight() - (this.timeline.judgementOffset ?? 42) - this.drag.current.y) / this.timeline.scale;
@@ -127,13 +176,20 @@ export class EventInteraction {
         extendIntervalSelection(this.drag, candidates, session.eventSelection, this.timeline.selectionInterval);
       }
     }
-    const hit = this.hit(point);
-    this.canvas.style.cursor = hit && (Math.abs(point.y - hit.y) < 6 || Math.abs(point.y - hit.y - hit.height) < 6) ? 'ns-resize' : hit ? 'move' : this.timeline.panEventColumns ? 'grab' : 'default';
+    this.updateCursor(point);
     this.timeline.changed();
   }
 
   up(event) {
     if (!this.drag) return;
+    if (this.drag.endpoint) {
+      this.move(event); const drag = this.drag, session = this.timeline.getSession(), next = this.previewEvent(drag.event); this.drag = null;
+      this.canvas.releasePointerCapture?.(event.pointerId);
+      if ((drag.moved || drag.scrolled) && session.chart === drag.chart && selectedEventEntries(session).length === 1 && selectedEventEntries(session)[0].event === drag.event) {
+        try { transformEvents(session, '调整事件首尾', current => current === drag.event ? next : current); } catch (error) { this.reportError(error); }
+      }
+      this.updateCursor(); this.timeline.changed(); return;
+    }
     if (this.drag.kind === 'stroke') this.move(event);
     if (this.drag.kind === 'multi-pan') { this.drag = null; this.canvas.style.cursor = this.timeline.panEventColumns ? 'grab' : 'default'; this.timeline.changed(); return; }
     if (this.drag.kind === 'stroke' && !this.drag.remove && !this.drag.tracing && this.timeline.previewPick?.(event)) { this.drag = null; this.timeline.changed(); return; }

@@ -2,6 +2,8 @@ import { EDITOR_SKIN_CANVASES } from '../core/editor-skin.mjs';
 
 let settings = null; let revision = 0;
 const contexts = new WeakMap();
+const originalContexts = new WeakMap();
+export const originalEditorContext = context => originalContexts.get(context) ?? context;
 const palette = value => Object.fromEntries(Object.entries(value ?? {}).map(([key, color]) => [key.toLowerCase(), color]));
 export function setEditorCanvasSkin(value, font = '', fonts = new Map()) {
   settings = value ? { ...value, palette: palette(value.palette), targets: Object.fromEntries(Object.entries(value.targets ?? {}).map(([role, config]) => [role, { ...config, palette: palette(config.palette), resolvedFont: fonts.get(config.font) || font }])), resolvedFont: font } : null;
@@ -53,7 +55,7 @@ export function editorSkinContext(context, requestedRole) {
       return Reflect.set(target, key, value, target);
     },
   });
-  roles.set(role, proxy); return proxy;
+  roles.set(role, proxy); originalContexts.set(proxy, context); return proxy;
 }
 
 function recolor(value, palette) {

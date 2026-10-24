@@ -3,6 +3,7 @@ import { createChartExport, download, suggestDownloadName } from '../platform/fi
 import { chartExportStem } from '../core/export-filename.mjs';
 import { DEFAULT_TRAJECTORY_SPLIT } from '../core/trajectory-simplify.mjs';
 import { diagnoseNoiseAreas } from '../core/noise-areas.mjs';
+import { DEFAULT_BEZIER_EXPORT_MARGIN } from '../core/bezier-compat.mjs';
 
 export function showExportDialog(chart, assets, chartName, onExport, identifier, { includeBackupCharts = false } = {}) {
   const host = showDialog('导出谱面', 'Next 格式保留整体曲线轨迹；原 RPE 格式将轨迹转换为普通事件。JSON 只包含谱面，PEZ 默认只打包当前谱面及其使用的资源。');
@@ -42,8 +43,13 @@ export function showExportDialog(chart, assets, chartName, onExport, identifier,
   const toleranceLabel = document.createElement('label'); toleranceLabel.className = 'field'; toleranceLabel.append('拆分容忍度', tolerance);
   const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = '相对原始等分碎事件的每轴最大误差：X/Y 为坐标单位，旋转为度。越小越精确；关闭优化则保留各轨迹设定的全部等分段。';
   settings.append(simplifyLabel, toleranceLabel, hint); host.append(settings);
-  const sync = () => { unusedLabel.hidden = unusedHint.hidden = format.value.endsWith(':json'); settings.hidden = format.value.startsWith('next:'); tolerance.disabled = !simplify.checked; removeLabel.hidden = !chart.blockAreaList?.length || format.value.startsWith('next:'); removeGlobalLabel.hidden = !hasGlobalEvents || format.value.startsWith('next:'); };
-  format.onchange = () => { suggestName(); sync(); }; simplify.onchange = sync; sync();
+  const clampBezier = document.createElement('input'); clampBezier.type = 'checkbox'; clampBezier.checked = false;
+  field('Bezier 极限控制点兼容处理（Phira）', clampBezier); const clampLabel = clampBezier.closest('label');
+  const margin = document.createElement('input'); margin.type = 'number'; margin.min = '0.001'; margin.max = '0.25'; margin.step = '0.001'; margin.value = DEFAULT_BEZIER_EXPORT_MARGIN;
+  field('Bezier X 边界保护距离', margin); const marginLabel = margin.closest('label');
+  const bezierHint = document.createElement('p'); bezierHint.className = 'hint'; bezierHint.textContent = '可选，仅处理退化或接近退化的曲线。只将导出副本中的 X 控制点向区间内部微调，Y、事件数值和编辑中的谱面不变。会改变曲线；保护距离越小越贴近原曲线，但兼容性越弱。'; host.append(bezierHint);
+  const sync = () => { const legacy = format.value.startsWith('rpe:'); unusedLabel.hidden = unusedHint.hidden = format.value.endsWith(':json'); settings.hidden = !legacy; tolerance.disabled = !simplify.checked; removeLabel.hidden = !chart.blockAreaList?.length || !legacy; removeGlobalLabel.hidden = !hasGlobalEvents || !legacy; clampLabel.hidden = bezierHint.hidden = !legacy; marginLabel.hidden = !legacy || !clampBezier.checked; margin.disabled = !legacy || !clampBezier.checked; };
+  format.onchange = () => { suggestName(); sync(); }; simplify.onchange = clampBezier.onchange = sync; sync();
   const apply = document.querySelector('#modal-apply'); apply.hidden = false; apply.textContent = '导出';
   apply.onclick = () => {
     try {
@@ -51,7 +57,7 @@ export function showExportDialog(chart, assets, chartName, onExport, identifier,
       if (noiseIssues.length && !acknowledgement.checked) throw new Error('请先阅读并勾选确认噪域检查提示');
       if (compatibility === 'rpe' && chart.blockAreaList?.length && !removeNoise.checked) throw new Error('原 RPE 无法表示噪域，请改用 Next 格式，或勾选移除噪域');
       if (compatibility === 'rpe' && hasGlobalEvents && !removeGlobal.checked) throw Error('原 RPE 无法表示全局事件，请改用 Next 格式，或勾选移除全局事件');
-      const result = createChartExport(chart, assets, chartName, { includeUnusedFiles: unused.checked, includeBackupCharts, compatibility, format: container, compact: compact.checked, name: name.value, identifier, removeNoiseAreas: compatibility === 'rpe' && removeNoise.checked, removeGlobalEvents: compatibility === 'rpe' && removeGlobal.checked, split: { simplify: simplify.checked, tolerance: Number(tolerance.value) } });
+      const result = createChartExport(chart, assets, chartName, { includeUnusedFiles: unused.checked, includeBackupCharts, compatibility, format: container, compact: compact.checked, name: name.value, identifier, clampBezier: compatibility === 'rpe' && clampBezier.checked, bezierMargin: Number(margin.value), removeNoiseAreas: compatibility === 'rpe' && removeNoise.checked, removeGlobalEvents: compatibility === 'rpe' && removeGlobal.checked, split: { simplify: simplify.checked, tolerance: Number(tolerance.value) } });
       const filename = download(result.blob, result.name); document.querySelector('#modal').close(); onExport(filename, container);
     } catch (error) { document.querySelector('#modal-error').textContent = error.message; }
   };

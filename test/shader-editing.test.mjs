@@ -208,7 +208,7 @@ test('PEZ 更新所属 extra.json 并保留其他字段，其他项目只在包�
   const assets = new Map([['song/EXTRA.JSON', encode({ extension: 42, effects: [] })], ['other/extra.json', encode({ effects: ['keep'] })]]);
   const output = packageEntries(chart, assets, 'song/chart.json');
   const extra = JSON.parse(new TextDecoder().decode(output.get('song/EXTRA.JSON')));
-  assert.deepEqual(extra, { extension: 42, effects: chart.effects });
+  assert.deepEqual(extra, { extension: 42, bpm: [{ time: [0, 0, 1], bpm: 120 }], effects: chart.effects });
   assert.equal(output.has('other/extra.json'), false);
   assert.deepEqual(packageEntries(chart, assets, 'song/chart.json', { includeUnusedFiles: true }).get('other/extra.json'), assets.get('other/extra.json'));
   assert.deepEqual(JSON.parse(new TextDecoder().decode(assets.get('song/EXTRA.JSON'))).effects, []);

@@ -42,14 +42,15 @@ export function renderEventInspector(session, tempo, currentBeat, reportError, n
   const container = document.querySelector('#event-properties'); container.replaceChildren();
   const entries = inspectorEntries(session); const event = entries[0]?.event; const eventType = entries[0]?.type;
   document.querySelector('#event-selection-count').textContent = `${entries.length} 已选`;
-  if (!event) { const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = '点击事件查看属性；拖动移动，拖动上/下边缘调整时间。Shift 框选，Ctrl 多选。事件区按 R 两次确定起止拍，Esc 取消。'; container.append(hint); return; }
+  if (!event) { const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = '点击事件查看属性；拖动移动。' + (session.rpeEventDrag !== true ? '拖动上/下边缘调整时间。' : '单选后按住首尾拖拽快捷键（默认 Z），左键调整开始拍，右键调整结束拍。') + 'Shift 框选，Ctrl 多选。事件区按 R 两次确定起止拍，Esc 取消。'; container.append(hint); return; }
   if (eventType === 'paintEvents') { renderShaderInspector(container, session, reportError, () => renderEventInspector(session, tempo, currentBeat, reportError, notify)); return; }
   const safely = action => { try { action(); } catch (error) { reportError(error); } };
   const valueKind = (type, value) => type === 'colorEvents' && Array.isArray(value) ? 'array' : type === 'textEvents' && typeof value === 'string' ? 'text' : Array.isArray(value) ? 'array' : 'number';
   const valueTitle = eventType === 'alphaEvents' ? ['起始透明度', '结束透明度'] : eventType === 'speedEvents' ? ['起始速度', '结束速度'] : eventType === 'colorEvents' ? ['起始颜色', '结束颜色'] : eventType === 'textEvents' ? ['起始文字', '结束文字'] : ['起始值', '结束值'];
   const fields = [['startTime', '开始拍', 'beat'], ['endTime', '结束拍', 'beat'], ['start', valueTitle[0], valueKind(eventType, event.start)], ['end', valueTitle[1], valueKind(eventType, event.end)], ['easingLeft', '缓动左边界', 'number'], ['easingRight', '缓动右边界', 'number'], ['linkgroup', '绑定组编号', 'number']];
+  const boundaryFields = [];
   const constrainNumber = (key, value) => {
-    if (eventType === 'alphaEvents' && (key === 'start' || key === 'end')) return Math.trunc(Math.max(0, Math.min(255, value)));
+    if (eventType === 'alphaEvents' && (key === 'start' || key === 'end')) return Math.trunc(Math.min(255, value));
     if (key === 'easingLeft' || key === 'easingRight') return Math.max(0, Math.min(1, value));
     if (key === 'linkgroup') return Math.max(0, Math.round(value));
     return value;
@@ -151,7 +152,7 @@ export function renderEventInspector(session, tempo, currentBeat, reportError, n
     const input = document.createElement('input'); input.type = kind === 'number' ? 'number' : 'text'; input.step = 'any'; input.setAttribute('aria-label', `事件${title}`);
     input.dataset.rpenField = key; label.dataset.rpenField = key;
     if (key === 'easingLeft' || key === 'easingRight') { input.min = 0; input.max = 1; }
-    if (eventType === 'alphaEvents' && (key === 'start' || key === 'end')) { input.min = 0; input.max = 255; }
+    if (eventType === 'alphaEvents' && (key === 'start' || key === 'end')) { input.max = 255; input.title = '0 隐藏判定线但保留音符；负数同时隐藏判定线与音符。透明度为整数，上限 255。'; }
     if (eventType === 'speedEvents' && (key === 'start' || key === 'end')) { input.min = -20; input.max = 20; }
     if (key === 'linkgroup') { input.min = 0; input.step = 1; }
     input.value = kind === 'beat' ? formatBeat(event[key]) : kind === 'array' ? event[key].join(', ') : event[key] ?? (key === 'easingRight' ? 1 : 0);
@@ -187,7 +188,7 @@ export function renderEventInspector(session, tempo, currentBeat, reportError, n
         controls.append(open); label.append(controls); container.append(label); container.insertBefore(sampling.panel, label); continue;
       }
     }
-    label.append(controls); container.append(label);
+    label.append(controls); if (key === 'easingLeft' || key === 'easingRight') boundaryFields.push(label); else container.append(label);
   }
   const lockLabel = document.createElement('label'); lockLabel.className = 'field'; lockLabel.append('钩定（首尾同步）');
   const lock = document.createElement('input'); lock.type = 'checkbox'; lock.checked = Boolean(event.inst); lock.setAttribute('aria-label', '钩定');
@@ -221,6 +222,7 @@ export function renderEventInspector(session, tempo, currentBeat, reportError, n
   context.save(); context.strokeStyle = '#8da4c7'; context.setLineDash([3, 3]);
   for (const boundary of [event.easingLeft ?? 0, event.easingRight ?? 1]) { const x = 10 + Math.max(0, Math.min(1, boundary)) * 240; context.beginPath(); context.moveTo(x, 10); context.lineTo(x, 88); context.stroke(); }
   context.restore();
+  container.append(...boundaryFields);
   const bezierLabel = document.createElement('label'); bezierLabel.className = 'field'; bezierLabel.append('Bezier');
   const enabled = document.createElement('input'); enabled.type = 'checkbox'; enabled.checked = Boolean(event.bezier); enabled.setAttribute('aria-label', '启用 Bezier');
   enabled.onchange = () => safely(() => applyEventTransform(session, '切换 Bezier', current => ({ ...current, bezier: Number(enabled.checked), bezierPoints: Array.isArray(current.bezierPoints) && current.bezierPoints.length === 4 && current.bezierPoints.slice(2).some(Number) ? current.bezierPoints : [0, 0, 1, 1] })));

@@ -80,6 +80,30 @@ test('appearance is immediate; preparation alternates full disabled and active s
   near(runtime.sample(2).alpha, 0.667);
   area.activeIntervals[0].readyFlash = false; near(new NoiseAreaRuntime(area, tempo).sample(1.5).alpha, 0.4);
 });
+
+test('零时长激活段保留预备闪烁，到达该拍后结束，默认与自定义秒数均生效', () => {
+  const area = createNoiseArea(0, 12); area.activeIntervals = [interval(4, 4)];
+  const original = structuredClone(area), runtime = new NoiseAreaRuntime(area, tempo);
+  assert.equal(runtime.sample(1.49).state, 'disabled'); assert.equal(runtime.sample(1.5).state, 'ready');
+  near(runtime.sample(1.5).activationMix, 1); near(runtime.sample(1.5 + 1 / 12).activationMix, 0);
+  assert.equal(runtime.sample(2).state, 'disabled'); assert.equal(runtime.sample(2.1).state, 'disabled'); assert.deepEqual(area, original);
+  area.activeIntervals[0].readyFlash = 1.25; assert.equal(new NoiseAreaRuntime(area, tempo).sample(0.75).state, 'ready');
+  area.activeIntervals[0].readyFlash = 0; assert.equal(new NoiseAreaRuntime(area, tempo).sample(1.5).state, 'disabled');
+});
+
+test('零时长激活段不截断其他激活段；生命周期外的瞬时段不生成预闪', () => {
+  const area = createNoiseArea(2, 12); area.activeIntervals = [interval(3, 9), interval(5, 5)];
+  const runtime = new NoiseAreaRuntime(area, tempo); assert.equal(runtime.sample(2.5).state, 'active'); assert.equal(runtime.sample(3).state, 'active');
+  area.activeIntervals = [interval(1, 1), interval(13, 13)]; const outside = new NoiseAreaRuntime(area, tempo);
+  assert.equal(outside.sample(1.5).state, 'disabled'); assert.equal(outside.sample(5.75).state, 'disabled');
+  area.activeIntervals = [interval(0, 2), interval(12, 14)]; assert.equal(new NoiseAreaRuntime(area, tempo).sample(5.75).state, 'disabled');
+  area.activeIntervals = [interval(12, 12)]; assert.equal(new NoiseAreaRuntime(area, tempo).sample(5.75).state, 'ready');
+  for (const entries of [[interval(4, 4, 0), interval(4, 6)], [interval(4, 6), interval(4, 4, 0)]]) {
+    area.activeIntervals = entries; const shared = new NoiseAreaRuntime(area, tempo); assert.equal(shared.sample(1.5).state, 'ready'); assert.equal(shared.sample(2.5).state, 'active');
+  }
+  const map = new TempoMap([{ bpm: 120, startTime: fromNumber(0) }, { bpm: 60, startTime: fromNumber(4) }]);
+  area.activeIntervals = [interval(4.25, 4.25)]; assert.equal(new NoiseAreaRuntime(area, map).sample(1.75).state, 'ready');
+});
 test('sampled values use four decimals without changing unrelated values or original data', () => {
   const area = createNoiseArea(); area.moveXEvents = [createNoiseEvent(0, 0, 0, 2)];
   const changed = applyNoiseSample(area, tempo, 0, samplingTarget(area, 'moveXEvents', 0, 'start'), { x: 1.23456789, y: 0 });

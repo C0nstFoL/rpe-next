@@ -97,6 +97,12 @@ test('虚线支持旧预闪布尔值，并在 BPM 变化后更新缓存', () => 
   near(strokes(editor, area)[1][1], editor.y(1.5));
 });
 
+test('零时长激活事件在噪域概览中仍显示完整预闪虚线', () => {
+  const area = createNoiseArea(0, 10); area.activeIntervals = [interval(4, 4, 0.5)];
+  const tempo = new TempoMap([{ startTime: fromNumber(0), bpm: 120 }]), editor = distributionEditor(tempo), points = strokes(editor, area);
+  assert.equal(points.length, 2); near(points[0][1], editor.y(4)); near(points[1][1], editor.y(3));
+});
+
 test('噪域内部短事件首尾相接时仅标注连续组范围，放大仍不堆叠内部端点', () => {
   const editor = Object.create(NoiseAreaEditor.prototype); const timeline = { eventValueThreshold: 30, eventValueFontSize: 13 };
   editor.getContext = () => ({ timeline }); editor.layout = () => ({ width: 1000, height: 800, eventLeft: 450 });

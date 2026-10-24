@@ -12,6 +12,7 @@ import { captureSelection, editCapturedSelection, commitSelectionEdit } from '..
 import { lineDisplayLabel } from '../core/line-groups.mjs';
 import { trajectoryEventValue } from '../core/curve-trajectory.mjs';
 import { editorSkinContext } from './editor-skin-canvas.mjs';
+import { drawEditorJudgement } from './editor-judgement.mjs';
 import { drawEventCurve, drawEventCurveBatch } from './event-curve.mjs';
 import { eventDisplayIndex, selectedEventGroups } from './event-display-index.mjs';
 import { intervalSelection, extendIntervalSelection } from '../core/selection-interval.mjs';
@@ -68,13 +69,15 @@ export class Timeline {
     this.judgementOffset = 42;
     this.gridCount = 11;
     this.selectionInterval = 1;
+    this.rpeEventDrag = false;
+    this.eventEndpointDragHeld = false;
     for (const canvas of [notesCanvas, eventsCanvas]) {
       canvas.addEventListener('wheel', event => {
         event.preventDefault();
         this.onWheel(event);
         changed();
       }, { passive: false });
-      canvas.addEventListener('contextmenu', event => { event.preventDefault(); this.onContextMenu(event, canvas); });
+      canvas.addEventListener('contextmenu', event => { event.preventDefault(); if (canvas === this.eventsCanvas && this.eventInteraction.consumeContextMenu()) { event.stopImmediatePropagation?.(); return; } this.onContextMenu(event, canvas); });
     }
     notesCanvas.addEventListener('pointermove', event => this.move(event));
     notesCanvas.addEventListener('pointerleave', () => { if (!this.drag) this.cursor = null; this.onNoteHover?.(null); changed(); });
@@ -275,6 +278,7 @@ export class Timeline {
   autoScroll(elapsed) {
     const drag = this.drag ?? this.eventInteraction.drag;
     if (!drag || !['move', 'startTime', 'endTime'].includes(drag.kind)) return;
+    if (drag.endpoint && !this.eventEndpointDragHeld) return;
     const height = this.viewHeight();
     const overflow = drag.current.y < 0 ? -drag.current.y : drag.current.y > height ? height - drag.current.y : 0;
     if (!overflow) return;
@@ -498,8 +502,6 @@ export class Timeline {
       context.beginPath(); context.moveTo(0, vertical); context.lineTo(width, vertical); context.stroke();
       if (tick % this.division === 0) { context.fillStyle = '#dddddd'; context.fillText(String(beat), 5, vertical - 4); }
     }
-    context.strokeStyle = this.judgementColor ?? '#ffffff';
-    context.beginPath(); context.moveTo(0, this.vertical(playBeat, height)); context.lineTo(width, this.vertical(playBeat, height)); context.stroke();
     context.lineWidth = 1;
   }
 
@@ -524,11 +526,21 @@ export class Timeline {
       context.beginPath(); context.moveTo(left, vertical); context.lineTo(left + width, vertical); context.stroke();
       if (major && showBeatLabels) { context.fillStyle = '#dddddd'; context.fillText(String(beat), left + 5, vertical - 4); }
     }
-    const playSeconds = this.tempo.seconds(playBeat, this.factor);
-    const playLineBeat = this.tempo.beat(playSeconds, factor);
-    context.strokeStyle = this.judgementColor ?? '#ffffff';
-    context.beginPath(); context.moveTo(left, this.verticalForLine(playLineBeat, lineIndex, height)); context.lineTo(left + width, this.verticalForLine(playLineBeat, lineIndex, height)); context.stroke();
     context.restore(); context.lineWidth = 1;
+  }
+
+  judgementSegments(width, height, playBeat, area) {
+    const session = this.getSession();
+    if (!session.multiLineActive || session.multiLineMode !== area || this.panelCount(area) < 2) return [{ left: 0, right: width, y: this.vertical(playBeat, height) }];
+    const panelWidth = this.panelWidth(width, area), stride = this.panelStride(width, area), offset = this.multiLineViewportOffset(width, area);
+    const seconds = this.tempo.seconds(playBeat, this.factor);
+    return session.targetLineIndices.map((lineIndex, panel) => ({ left: panel * stride - offset, right: panel * stride - offset + panelWidth,
+      y: this.verticalForLine(this.tempo.beat(seconds, this.factorForLine(lineIndex)), lineIndex, height) }));
+  }
+
+  drawJudgement(context, width, height, playBeat, area) {
+    const referenceWidth = this.gridReferenceWidth ?? this.panelWidth(width, area);
+    drawEditorJudgement(context, this.judgementSegments(width, height, playBeat, area), this.judgementColor ?? '#ffffff', Math.max(0.5, (this.barWidth ?? 3) * 2 * referenceWidth / 1920));
   }
 
   drawMultiLineGrid(context, width, height, playBeat, area = 'events') {
@@ -599,6 +611,7 @@ export class Timeline {
       for (let panel = 0; panel < this.panelCount('notes') - 1; panel++) { const separator = panel * this.panelStride(width, 'notes') + panelWidth - offset; context.beginPath(); context.moveTo(separator, 0); context.lineTo(separator, height); context.stroke(); }
     }
     context.lineWidth = 1;
+    this.drawJudgement(context, width, height, playBeat, 'notes');
     if (this.highlightChart !== session.chart || this.highlightTempo !== this.tempo) {
       this.highlightChart = session.chart; this.highlightTempo = this.tempo; this.simultaneous = simultaneousNotes(session.chart, this.tempo);
     }
@@ -791,15 +804,15 @@ export class Timeline {
       context.strokeStyle = '#80ffff'; context.beginPath();
       drag.points.forEach((point, index) => index ? context.lineTo(point.x, point.y) : context.moveTo(point.x, point.y)); context.stroke();
     } else if (drag) {
-      const deltaBeat = this.eventInteraction.delta();
       context.strokeStyle = '#fff'; context.setLineDash([5, 3]);
-      for (const rectangle of this.eventRects) {
+      for (const rectangle of this.eventInteraction.previewRectangles(this.eventRects, width)) {
         const lineSelection = session.multiLineActive && session.multiLineMode === 'events' ? (session.multiEventSelection?.get(rectangle.lineIndex) ?? new Set()) : session.eventSelection;
         if (!lineSelection.has(eventKey(rectangle.type, rectangle.index))) continue;
         const event = session.multiLineActive && session.multiLineMode === 'events' ? eventListAt(session, rectangle.lineIndex, rectangle.type)[rectangle.index] : eventList(session, rectangle.type)[rectangle.index]; if (!event) continue;
         const vertical = session.multiLineActive && session.multiLineMode === 'events' ? beat => this.verticalForLine(beat, rectangle.lineIndex, height) : beat => this.eventVertical(beat, rectangle.type);
-        const top = vertical(beatValue(event.endTime) + (drag.kind === 'startTime' ? 0 : deltaBeat));
-        const bottom = vertical(beatValue(event.startTime) + (drag.kind === 'endTime' ? 0 : deltaBeat));
+        const preview = this.eventInteraction.previewEvent(event);
+        const top = vertical(beatValue(preview.endTime));
+        const bottom = vertical(beatValue(preview.startTime));
         context.strokeRect(rectangle.x, top, rectangle.width, bottom - top);
       }
       context.setLineDash([]);
@@ -847,6 +860,7 @@ export class Timeline {
       drawClipboard(this, context, width, height, 'events');
       this.eventInteraction.draw(context, width);
       this.drawMultiLineBeatLabels(context, width, height, 'events');
+      this.drawJudgement(context, width, height, playBeat, 'events');
       return;
     }
     this.grid(context, width, height, playBeat);
@@ -954,17 +968,17 @@ export class Timeline {
       context.strokeStyle = '#80ffff'; context.beginPath();
       drag.points.forEach((point, index) => index ? context.lineTo(point.x, point.y) : context.moveTo(point.x, point.y)); context.stroke();
     } else if (drag) {
-      const deltaBeat = this.eventInteraction.delta();
       context.strokeStyle = '#fff'; context.setLineDash([5, 3]);
-      for (const rectangle of this.eventRects) if (this.getSession().eventSelection.has(eventKey(rectangle.type, rectangle.index))) {
-        const event = layer[rectangle.type][rectangle.index];
-        const top = this.eventVertical(beatValue(event.endTime) + (drag.kind === 'startTime' ? 0 : deltaBeat), rectangle.type);
-        const bottom = this.eventVertical(beatValue(event.startTime) + (drag.kind === 'endTime' ? 0 : deltaBeat), rectangle.type);
+      for (const rectangle of this.eventInteraction.previewRectangles(this.eventRects, width)) if (this.getSession().eventSelection.has(eventKey(rectangle.type, rectangle.index))) {
+        const event = this.eventInteraction.previewEvent(layer[rectangle.type][rectangle.index]);
+        const top = this.eventVertical(beatValue(event.endTime), rectangle.type);
+        const bottom = this.eventVertical(beatValue(event.startTime), rectangle.type);
         const height = bottom - top;
         context.strokeRect(rectangle.x, top, rectangle.width, height);
       } context.setLineDash([]);
     }
     this.eventInteraction.draw(context, width);
+    this.drawJudgement(context, width, height, playBeat, 'events');
   }
 
   drawTrajectoryEvent(context, rectangle, event) {

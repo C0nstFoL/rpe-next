@@ -34,6 +34,7 @@ export const DEFAULT_EDITOR_PREFERENCES = Object.freeze({
   "overflowDarken": 0.15,
   "includeBackupCharts": false,
   "pairedMovementSampling": true,
+  "rpeEventDrag": false,
   "scale": 600,
   "division": 4,
   "snapX": true,
