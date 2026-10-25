@@ -29,22 +29,22 @@ async function verifySources(root, ref, paths, read) {
     catch (cause) { throw Error('Missing release source file: ' + path, { cause }); }
     if (!bytes) throw Error('Missing release source file: ' + path);
     const actual = blobHash(bytes);
-    if (actual !== expected) throw Error('Release source content mismatch: ' + path);
+    if (actual !== expected && blobHash(bytes, true) !== expected) throw Error('Release source content mismatch: ' + path);
     files++;
   }
   if (!files) throw Error('Release source selection is empty');
   return files;
 }
 
-function blobHash(bytes) {
+function blobHash(bytes, normalizeLineEndings = false) {
   const source = Buffer.from(bytes);
   // Git's core.autocrlf may rewrite tracked text files while extracting the
   // archive on Windows. Normalize only valid UTF-8 text; binary assets remain
   // byte-for-byte verified.
   let normalized = source;
-  if (!source.includes(0)) {
+  if (normalizeLineEndings && !source.includes(0)) {
     try {
-      const text = new TextDecoder('utf-8', { fatal: true }).decode(source);
+      const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(source);
       normalized = Buffer.from(text.replace(/\r\n?/g, '\n'));
     } catch { /* binary or non-UTF-8 content */ }
   }

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { writeZip } from '../src/platform/archive.mjs';
 import { extractReleaseZip, verifyReleaseSourceDirectory, verifyReleaseSourceZip } from '../tools/release-source.mjs';
 
-async function fixture(context) {
+async function fixture(context, textFiles = []) {
   const root = await mkdtemp(join(tmpdir(), 'rpen-release-source-'));
   context.after(() => rm(root, { recursive: true, force: true }));
   const git = (...args) => execFileSync('git', args, { cwd: root, stdio: 'pipe' });
@@ -16,7 +16,8 @@ async function fixture(context) {
   await mkdir(join(root, 'assets/中文皮肤'), { recursive: true });
   await writeFile(join(root, name), new Uint8Array([0, 255, 128, 42]));
   await writeFile(join(root, 'private.txt'), 'not selected');
-  git('add', '--', 'assets', 'private.txt');
+  for (const [path, content] of textFiles) await writeFile(join(root, path), content);
+  git('-c', 'core.autocrlf=false', 'add', '--', 'assets', 'private.txt');
   git('-c', 'user.name=Release Test', '-c', 'user.email=release-test@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-m', 'Fixture');
   const archive = join(root, 'source.zip'), stage = join(root, 'stage');
   git('archive', '--format=zip', '-0', '--output=' + archive, 'HEAD', '--', 'assets');
@@ -49,4 +50,29 @@ test('发布 ZIP 校验实际归档的中文路径和内容，拒绝打包后的
     if (damaged) await assert.rejects(verifyReleaseSourceZip(root, 'HEAD', ['assets'], archive, prefix), /Missing release source file/);
     else assert.equal(await verifyReleaseSourceZip(root, 'HEAD', ['assets'], archive, prefix), 1);
   }
+});
+
+test('发布校验保留 Git 原始 UTF-8 BOM，目录和最终 ZIP 都不会误判或忽略缺失 BOM', async context => {
+  const source = 'assets/bom.mjs';
+  const content = Buffer.from('\uFEFFexport const title = "中文";\n');
+  const { root, name, stage } = await fixture(context, [[source, content]]);
+  assert.equal((await readFile(join(stage, source), 'utf8')).replace(/\r\n?/g, '\n'), content.toString('utf8'));
+  assert.equal(await verifyReleaseSourceDirectory(root, 'HEAD', ['assets'], stage), 2);
+  const prefix = 'Application/resources/app/', archive = join(root, 'bom.zip');
+  const files = new Map([[prefix + source, content], [prefix + name, new Uint8Array(await readFile(join(stage, name)))]]);
+  await writeFile(archive, new Uint8Array(await writeZip(files).arrayBuffer()));
+  assert.equal(await verifyReleaseSourceZip(root, 'HEAD', ['assets'], archive, prefix), 2);
+  await writeFile(join(stage, source), content.subarray(3));
+  await assert.rejects(verifyReleaseSourceDirectory(root, 'HEAD', ['assets'], stage), /content mismatch/);
+});
+
+test('发布校验接受原始 CRLF 和工作树换行转换，保留 BOM 并继续拒绝内容变化', async context => {
+  const plain = 'assets/plain.mjs', bom = 'assets/bom.mjs', raw = 'assets/raw-crlf.mjs';
+  const { root, stage } = await fixture(context, [[plain, 'export const value = 1;\n'], [bom, '\uFEFFexport const value = 1;\n'], [raw, 'export const value = 1;\r\n']]);
+  assert.equal(await verifyReleaseSourceDirectory(root, 'HEAD', ['assets'], stage), 4);
+  await writeFile(join(stage, plain), 'export const value = 1;\r\n');
+  await writeFile(join(stage, bom), '\uFEFFexport const value = 1;\r\n');
+  assert.equal(await verifyReleaseSourceDirectory(root, 'HEAD', ['assets'], stage), 4);
+  await writeFile(join(stage, plain), 'export const value = 2;\r\n');
+  await assert.rejects(verifyReleaseSourceDirectory(root, 'HEAD', ['assets'], stage), /content mismatch/);
 });
