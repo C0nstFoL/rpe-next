@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, net, protocol, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, net, protocol, shell, ipcMain, safeStorage } = require('electron');
 const { realpath, readFile } = require('node:fs/promises');
 const { mkdirSync } = require('node:fs');
 const { resolve, sep } = require('node:path');
@@ -11,15 +11,21 @@ const smokeMedia = process.argv.includes('--smoke-media');
 const smokeMods = process.argv.includes('--smoke-mods');
 const smokeNative = process.argv.includes('--smoke-native');
 const smokeSaving = process.argv.includes('--smoke-saving');
-const smoke = process.argv.includes('--smoke-test') || smokeSettings || smokeMedia || smokeMods || smokeNative || smokeSaving;
+const smokeAgent = process.argv.includes('--smoke-agent');
+const smokeAudio = process.argv.includes('--smoke-audio');
+const smokeMapper = process.argv.includes('--smoke-mapper');
+const smoke = process.argv.includes('--smoke-test') || smokeSettings || smokeMedia || smokeMods || smokeNative || smokeSaving || smokeAgent || smokeAudio || smokeMapper;
 app.setName('RePhiEdit Next');
-app.setPath('userData', (smokeNative || smokeSaving) && process.env.RPE_NATIVE_TEST_HOME ? resolve(process.env.RPE_NATIVE_TEST_HOME) : smoke ? resolve(app.getPath('temp'), 'rpe-next-smoke-' + Date.now()) : resolve(app.getPath('appData'), 'rpe-next-desktop'));
+app.setPath('userData', (smokeNative || smokeSaving || smokeAgent || smokeAudio || smokeMapper) && process.env.RPE_NATIVE_TEST_HOME ? resolve(process.env.RPE_NATIVE_TEST_HOME) : smoke ? resolve(app.getPath('temp'), 'rpe-next-smoke-' + Date.now()) : resolve(app.getPath('appData'), 'rpe-next-desktop'));
 mkdirSync(app.getPath('userData'), { recursive: true });
 protocol.registerSchemesAsPrivileged([{ scheme: 'rpe', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   let mainWindow;
+  const cancelAgentNetwork = require('./agent-network.cjs').installAgentNetwork({ ipcMain, net, origin, window: () => mainWindow });
+  require('./agent-capture.cjs').installAgentCapture({ ipcMain, origin, window: () => mainWindow });
+  app.on('before-quit', cancelAgentNetwork);
   let native, closing = false, relocating = false;
   app.on('before-quit', event => {
     if (!native || closing) return;
@@ -35,7 +41,36 @@ else {
   app.on('window-all-closed', () => app.quit());
   app.whenReady().then(async () => {
     const root = await realpath(resolve(__dirname, '..'));
+    const { AgentWorkspaceService, installAgentWorkspace } = await import(pathToFileURL(resolve(__dirname, 'agent-workspace.mjs')).href);
+    const agentWorkspace = new AgentWorkspaceService(resolve(app.getPath('userData'), 'agent-workspaces'), { fetcher: (...args) => net.fetch(...args), openFolder: async path => { const error = await shell.openPath(path); if (error) throw Error(error); } });
+    app.on('before-quit', installAgentWorkspace({ ipcMain, service: agentWorkspace, origin, window: () => mainWindow }));
     const { atomicJson } = await import(pathToFileURL(resolve(__dirname, 'native-store.mjs')).href);
+    const { AudioStorage, installAudioStorage } = await import(pathToFileURL(resolve(__dirname, 'audio-storage.mjs')).href);
+    const audioRoots = {
+      separation: smokeAudio && process.env.RPE_AUDIO_TEST_CACHE ? resolve(process.env.RPE_AUDIO_TEST_CACHE) : resolve(app.getPath('userData'), 'audio-separation'),
+      onsets: smokeAudio && process.env.RPE_ONSET_TEST_CACHE ? resolve(process.env.RPE_ONSET_TEST_CACHE) : resolve(app.getPath('userData'), 'audio-onsets'),
+      mapper: (smokeAudio || smokeMapper) && process.env.RPE_MAPPER_TEST_CACHE ? resolve(process.env.RPE_MAPPER_TEST_CACHE) : resolve(app.getPath('userData'), 'audio-mapper')
+    };
+    const audioStorage = await new AudioStorage(resolve(app.getPath('userData'), 'audio-storage.json'), audioRoots, { progress: value => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('rpen-audio-storage-progress', value); } }).initialize();
+    installAudioStorage({ ipcMain, service: audioStorage, origin, window: () => mainWindow, dialog, shell });
+    const { AudioSeparationService, installAudioSeparation } = await import(pathToFileURL(resolve(__dirname, 'audio-separation.mjs')).href);
+    const audioSeparation = new AudioSeparationService(audioRoots.separation, { script: resolve(__dirname, 'separate-audio.py'), python: smokeAudio ? process.env.RPE_AUDIO_TEST_PYTHON : undefined, fetcher: (...args) => net.fetch(...args), progress: value => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('rpen-audio-separation-progress', value); } });
+    audioStorage.attach('separation', audioSeparation); if (!audioStorage.error) await audioSeparation.initialize();
+    installAudioSeparation({ ipcMain, service: audioSeparation, origin, window: () => mainWindow, dialog });
+    app.on('before-quit', () => audioSeparation.close());
+    const { AudioOnsetService, installAudioOnsets } = await import(pathToFileURL(resolve(__dirname, 'audio-onsets.mjs')).href);
+    const audioOnsets = new AudioOnsetService(audioRoots.onsets, { script: resolve(__dirname, 'detect-onsets.py'), python: smokeAudio ? process.env.RPE_ONSET_TEST_PYTHON : undefined, progress: value => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('rpen-audio-onsets-progress', value); } });
+    audioStorage.attach('onsets', audioOnsets); if (!audioStorage.error) await audioOnsets.initialize();
+    installAudioOnsets({ ipcMain, service: audioOnsets, origin, window: () => mainWindow, dialog });
+    app.on('before-quit', () => audioOnsets.close());
+    const { AudioMapperService, installAudioMapper } = await import(pathToFileURL(resolve(__dirname, 'audio-mapper.mjs')).href);
+    const audioMapper = new AudioMapperService(audioRoots.mapper, { script: resolve(__dirname, 'map-audio.py'), python: smokeAudio || smokeMapper ? process.env.RPE_MAPPER_TEST_PYTHON : undefined, source: smokeAudio || smokeMapper ? process.env.RPE_MAPPER_TEST_SOURCE : undefined, progress: value => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('rpen-audio-mapper-progress', value); } });
+    audioStorage.attach('mapper', audioMapper); if (!audioStorage.error) await audioMapper.initialize();
+    installAudioMapper({ ipcMain, service: audioMapper, origin, window: () => mainWindow, dialog });
+    app.on('before-quit', () => audioMapper.close());
+    const { AgentCredentialVault, installAgentCredentials } = await import(pathToFileURL(resolve(__dirname, 'agent-credentials.mjs')).href);
+    const agentCredentials = new AgentCredentialVault(resolve(app.getPath('userData'), 'agent-credentials.json'), { safeStorage, writeJson: atomicJson });
+    installAgentCredentials({ ipcMain, vault: agentCredentials, origin, window: () => mainWindow });
     const configPath = resolve(app.getPath('userData'), 'native-storage.json');
     let config; try { config = JSON.parse(await readFile(configPath, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
     let nativeRoot = config?.root ?? (smoke ? resolve(app.getPath('userData'), 'Library') : resolve(app.getPath('documents'), 'RePhiEdit Next', 'Library'));
@@ -105,13 +140,18 @@ else {
     });
     const { collaborationConnectSources } = await import(pathToFileURL(resolve(root, 'src/core/collaboration-policy.mjs')).href);
     const connectSources = collaborationConnectSources(process.env.RPE_MEDIA_ORIGINS);
+    let agentSourceBundle;
     protocol.handle('rpe', async request => {
       try {
         const url = new URL(request.url);
         if (url.host !== 'app' || !['GET', 'HEAD'].includes(request.method)) return new Response('Forbidden', { status: 403 });
         if (smokeNative && url.pathname === '/__native-test-seed') return new Response('<!doctype html><html><body>Native migration fixture</body></html>', { headers: { 'Content-Type': 'text/html' } });
         const relative = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1));
-        if (!['index.html', 'styles.css', 'protocols/MOD-PROTOCOL.zh-CN.md', 'protocols/GLOBAL-EVENTS-PROTOCOL.zh-CN.md', 'protocols/EDITOR-SKIN-PROTOCOL.zh-CN.md', 'protocols/DESKTOP-STORAGE.zh-CN.md', 'schemas/editor-skin-v1.schema.json', 'schemas/editor-skin-components.v1.json', 'schemas/mod-v1.schema.json', 'schemas/mod-api-v1.d.ts'].includes(relative) && !relative.startsWith('src/') && !relative.startsWith('assets/')) return new Response('Not found', { status: 404 });
+        if (relative === 'assets/agent-source.json') {
+          if (!agentSourceBundle) agentSourceBundle = import(pathToFileURL(resolve(root, 'desktop/agent-source.mjs')).href).then(module => module.createAgentSourceBundle(root)).then(bundle => JSON.stringify(bundle)).catch(error => { agentSourceBundle = null; throw error; });
+          const content = await agentSourceBundle; return new Response(request.method === 'HEAD' ? null : content, { headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
+        }
+        if (!['index.html', 'styles.css', 'protocols/MOD-PROTOCOL.zh-CN.md', 'protocols/GLOBAL-EVENTS-PROTOCOL.zh-CN.md', 'protocols/EDITOR-SKIN-PROTOCOL.zh-CN.md', 'protocols/DESKTOP-STORAGE.zh-CN.md', 'protocols/AUDIO-SEPARATION.zh-CN.md', 'schemas/editor-skin-v1.schema.json', 'schemas/editor-skin-components.v1.json', 'schemas/mod-v1.schema.json', 'schemas/mod-api-v1.d.ts'].includes(relative) && !relative.startsWith('src/') && !relative.startsWith('assets/')) return new Response('Not found', { status: 404 });
         const path = await realpath(resolve(root, relative));
         if (!path.startsWith(root + sep)) return new Response('Not found', { status: 404 });
         const response = await net.fetch(pathToFileURL(path).href);
@@ -129,11 +169,16 @@ else {
       webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, preload: resolve(__dirname, 'preload.cjs'), spellcheck: false, backgroundThrottling: !smoke }
     });
     mainWindow.removeMenu();
+    mainWindow.webContents.on('did-start-loading', cancelAgentNetwork);
+    mainWindow.webContents.on('did-start-loading', () => audioSeparation.close());
+    mainWindow.webContents.on('did-start-loading', () => audioOnsets.close());
+    mainWindow.webContents.on('did-start-loading', () => audioMapper.close());
+    mainWindow.webContents.on('render-process-gone', cancelAgentNetwork);
     let preferenceFlush = false;
     mainWindow.on('close', event => {
       if (preferenceFlush || mainWindow.isDestroyed()) return;
       event.preventDefault();
-      mainWindow.webContents.executeJavaScript('globalThis.rpenFlushPreferences?.()').then(() => {
+      mainWindow.webContents.executeJavaScript('globalThis.rpenPrepareClose?.() ?? globalThis.rpenFlushPreferences?.()').then(() => agentCredentials.flush()).then(() => {
         preferenceFlush = true; mainWindow.close();
       }).catch(error => {
         const choice = dialog.showMessageBoxSync(mainWindow, { type: 'warning', title: '设置尚未保存', message: error.message, buttons: ['继续编辑', '仍然退出'], defaultId: 0, cancelId: 0 });
@@ -168,7 +213,10 @@ else {
       const result = await mainWindow.webContents.executeJavaScript(`(async () => {
         await document.fonts.ready;
         await new Promise(resolve => setTimeout(resolve, 1000));
-        const resources = await Promise.all(['/src/ui/app.mjs', '/assets/rpe/Texture/Tap2.png', '/assets/rpe/fonts/cmdysj.ttf'].map(async path => { const response = await fetch(path); return { path, status: response.status, bytes: (await response.arrayBuffer()).byteLength }; }));
+        const resources = await Promise.all(['/src/ui/app.mjs', '/assets/rpe/Texture/Tap2.png', '/assets/rpe/fonts/cmdysj.ttf', '/assets/agent-source.json'].map(async path => { const response = await fetch(path); return { path, status: response.status, bytes: (await response.arrayBuffer()).byteLength }; }));
+        const { AgentSourceReader } = await import('/src/platform/agent-source.mjs');
+        const source = await new AgentSourceReader().query({ action: 'search', path: 'src/application/', query: 'trajectoryChart' });
+        if (!source.matches.some(entry => entry.path === 'src/application/trajectory-commands.mjs')) throw Error('桌面源码查询烟测失败');
         const forbidden = await fetch('/desktop/main.cjs');
         const { CollaborationMedia } = await import('/src/platform/collaboration-media.mjs');
         const media = new CollaborationMedia(); const hashPhases = [];
@@ -183,6 +231,9 @@ else {
       if (smokeMedia) result.media = await (await import(pathToFileURL(resolve(root, 'tools/smoke-media.mjs')).href)).smokeMediaTransfer(mainWindow.webContents);
       if (smokeMods) result.mods = await (await import(pathToFileURL(resolve(root, 'tools/smoke-mods.mjs')).href)).smokeMods(mainWindow.webContents);
       if (smokeSaving) result.saving = await (await import(pathToFileURL(resolve(root, 'tools/smoke-saving.mjs')).href)).smokeSaving(mainWindow.webContents);
+      if (smokeAgent) result.agent = await (await import(pathToFileURL(resolve(root, 'tools/smoke-agent.mjs')).href)).smokeAgent(mainWindow.webContents, { userData: app.getPath('userData'), phase: process.env.RPE_AGENT_TEST_PHASE ?? 'save' });
+      if (smokeAudio) result.audio = await (await import(pathToFileURL(resolve(root, 'tools/smoke-audio.mjs')).href)).smokeAudio(mainWindow.webContents, process.env.RPE_AUDIO_TEST_FIXTURE);
+      if (smokeMapper) result.mapper = await (await import(pathToFileURL(resolve(root, 'tools/smoke-audio.mjs')).href)).smokeMapper(mainWindow.webContents, process.env.RPE_AUDIO_TEST_FIXTURE);
       if (smokeNative) result.native = await (await import(pathToFileURL(resolve(root, 'tools/smoke-native.mjs')).href)).smokeNative(mainWindow.webContents, native, {
         service: () => native,
         selectFolder: async (path, action) => {

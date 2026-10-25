@@ -11,6 +11,7 @@ import { integerChartAlpha } from '../core/alpha-values.mjs';
 import { chartExportStem, safeExportStem, DownloadNames } from '../core/export-filename.mjs';
 import { isBackupChartFile, isChartDocumentFile } from '../core/chart-backups.mjs';
 import { collectExportAssetPaths } from './export-assets.mjs';
+import { bezierExportMargin, clampExportBezierEvent } from '../core/bezier-compat.mjs';
 import { t } from '../i18n.mjs';
 
 export async function openFiles(fileList, { confirmLargeArchive, includeBackupCharts = false } = {}) {
@@ -95,13 +96,14 @@ export function exportChart(chart, name) {
   download(new Blob([serializeChart(orderedExportChart(chart))], { type: 'application/json' }), chartExportStem(chart, name) + '.json');
 }
 
-function orderedExportChart(chart) {
+function orderedExportChart(chart, { clampBezier = false, bezierMargin } = {}) {
   chart = integerChartAlpha(chart);
+  const margin = clampBezier ? bezierExportMargin(bezierMargin) : 0;
   const startBeat = event => {
     const time = event?.startTime ?? event?.start;
     return Array.isArray(time) ? beatValue(time) : Number.isFinite(time) ? time : 0;
   };
-  const ordered = events => [...events].sort((left, right) => startBeat(left) - startBeat(right));
+  const ordered = events => [...events].sort((left, right) => startBeat(left) - startBeat(right)).map(event => clampBezier ? clampExportBezierEvent(event, margin) : event);
   const shader = event => {
     if (!event?.vars) return event;
     return { ...event, vars: Object.fromEntries(Object.entries(event.vars).map(([name, value]) => [name,
@@ -126,7 +128,7 @@ function orderedExportChart(chart) {
     ...(Array.isArray(chart.META?.effects) ? { META: { ...chart.META, effects: effects(chart.META.effects) } } : {}) };
 }
 
-export function legacyChart(chart, splitSettings = {}) {
+export function legacyChart(chart, splitSettings = {}, compatibility = {}) {
   if (chart.blockAreaList?.length) throw new Error(t('files.s82aa779'));
   if (Object.values(chart.globalEvents?.types ?? {}).some(type => Object.values(type.columns).some(column => column.events.length))) throw new Error(t('files.s91b752c'));
   const next = structuredClone(chart);
@@ -145,7 +147,7 @@ export function legacyChart(chart, splitSettings = {}) {
       for (const event of trajectories) for (const [type, fragments] of expandTrajectory(event, tempo, line.bpmfactor ?? 1, splitSettings)) layer[type] = [...(layer[type] ?? []), ...fragments].sort((left, right) => beatValue(left.startTime) - beatValue(right.startTime));
     }
   }
-  return orderedExportChart(next);
+  return orderedExportChart(next, compatibility);
 }
 
 export function exportLegacyChart(chart, name) {
@@ -244,12 +246,14 @@ export function packageEntries(chart, assets, chartName, options = {}) {
     const start = event => { const value = event?.startTime ?? event?.start; return Array.isArray(value) ? beatValue(value) : Number.isFinite(value) ? value : 0; };
     return start(left) - start(right);
   });
-  if (effects.length || Array.isArray(chart.effects)) {
-    const directory = outputName.replaceAll('\\', '/').split('/').slice(0, -1).join('/');
-    const path = directory ? `${directory}/extra.json` : 'extra.json';
-    const existing = [...output.keys()].find(name => normalizePath(name) === normalizePath(path));
+  const extraDirectory = outputName.replaceAll('\\', '/').split('/').slice(0, -1).join('/');
+  const extraPath = extraDirectory ? `${extraDirectory}/extra.json` : 'extra.json';
+  const existing = [...output.keys()].find(name => normalizePath(name) === normalizePath(extraPath));
+  const updateEffects = effects.length > 0 || Array.isArray(chart.effects);
+  if (updateEffects || existing) {
     const extra = existing ? JSON.parse(decodeLegacy(output.get(existing))) : {};
-    output.set(existing ?? path, new TextEncoder().encode(stringifyPreservingNumbers({ ...extra, effects }, options.compact === false ? 2 : 0)));
+    const bpm = [...chart.BPMList].sort((left, right) => beatValue(left.startTime) - beatValue(right.startTime)).map(entry => ({ time: [...entry.startTime], bpm: entry.bpm }));
+    output.set(existing ?? extraPath, new TextEncoder().encode(stringifyPreservingNumbers({ ...extra, bpm, ...(updateEffects ? { effects } : {}) }, options.compact === false ? 2 : 0)));
   }
   if (outputName !== chartName) {
     for (const [name, bytes] of matchingInfo(assets, chartName)) {
@@ -281,7 +285,7 @@ export function createChartExport(chart, assets, chartName, options = {}) {
   if (!['json', 'pez'].includes(format) || !['next', 'rpe'].includes(compatibility)) throw new Error(t('files.sca076d2'));
   let source = compatibility === 'rpe' && options.removeNoiseAreas ? { ...chart, blockAreaList: [] } : chart;
   if (compatibility === 'rpe' && options.removeGlobalEvents) { source = { ...source }; delete source.globalEvents; }
-  const snapshot = compatibility === 'rpe' ? legacyChart(source, split) : orderedExportChart(chart);
+  const snapshot = compatibility === 'rpe' ? legacyChart(source, split, { clampBezier: options.clampBezier === true, bezierMargin: options.bezierMargin }) : orderedExportChart(chart);
   delete snapshot.chartTime;
   if (name !== undefined && !String(name).trim()) throw new Error(t('files.sc04226c'));
   const stem = name === undefined ? chartExportStem(chart, chartName) : safeExportStem(name);

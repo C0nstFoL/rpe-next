@@ -5,8 +5,7 @@ export function drawGameUi(context, chart, states, completionTimes, seconds, sel
   const { combo, score } = scoreAt(completionTimes, seconds);
   const progress = Math.max(0, Math.min(1, (seconds + (chart.META.offset ?? 0) / 1000) / Math.max(0.001, duration)));
   const bindings = gameUiBindings(chart, states);
-  const name = chartDisplayName(chart.META.name);
-  const texts = { combonumber: String(combo), combo: 'combo', score: String(score).padStart(7, '0'), name, level: chart.META.level ?? '' };
+  const texts = { combonumber: String(combo), combo: 'combo', score: String(score).padStart(7, '0'), name: chartDisplayName(chart.META.name), level: chart.META.level ?? '' };
   const baseScale = viewScale;
   const logicalWidth = viewport.width / viewport.scale;
   const logicalHeight = viewport.height / viewport.scale;

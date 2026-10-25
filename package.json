@@ -1,6 +1,6 @@
 {
   "name": "rpe-next",
-  "version": "0.12.2",
+  "version": "0.13.0",
   "private": true,
   "type": "module",
   "description": "Independent, incremental Re:PhiEdit reconstruction",
@@ -38,7 +38,9 @@
     "i18n:check": "node tools/i18n.mjs check",
     "i18n:report": "node tools/i18n.mjs report",
     "i18n:audit": "node tools/i18n-audit.mjs",
-    "i18n:verify": "node tools/i18n-verify.mjs"
+    "i18n:verify": "node tools/i18n-verify.mjs",
+    "i18n:extract": "node tools/i18n-apply.mjs",
+    "i18n:markup": "node tools/i18n-markup.mjs"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",

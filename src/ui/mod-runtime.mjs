@@ -114,6 +114,14 @@ export class ModRuntime {
         import:path=>import(state.modules.resolve('./'+modPath(path),'')),
       },
       commands:{register:definition=>{if(typeof definition.id!=='string'||typeof definition.run!=='function')throw Error(t('mod-runtime.s983ca62'));const key=id+':'+definition.id;if(this.commands.has(key))throw Error(t('mod-runtime.s34c4b47')+key);const command={...definition,owner:id,run:scope.wrap(definition.run)};this.commands.set(key,command);this.changed();return scope.defer(()=>{this.commands.delete(key);this.changed();});}},
+      agent:{
+        register:definition=>{
+          if (!this.editor.agent) throw Error(t('mod-runtime.sf491b8c'));
+          const name = 'mod_' + id.replaceAll('-', '_').replaceAll('.', '_') + '_' + definition.name;
+          return scope.defer(this.editor.agent.commands.register({ ...definition, name }, id));
+        },
+        list:()=>this.editor.agent?.commands.tools() ?? [],
+      },
       globalEvents:{
         register:definition=>{
           const wrap=definition=>Object.fromEntries(Object.entries(definition).map(([key,value])=>[key,typeof value==='function'?(...args)=>{if(scope.closed)throw Error(t('mod-runtime.sdaeeea1'));try{return value(...args);}catch(error){this.failure(id,error);throw error;}}:value]));

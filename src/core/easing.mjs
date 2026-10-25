@@ -53,14 +53,23 @@ export function easing(progress, type = 1, left = 0, right = 1) {
 
 export function bezier(progress, points) {
   if (!Array.isArray(points) || points.length !== 4 || !points.every(Number.isFinite)) return progress;
+  if (progress <= 0) return 0;
+  if (progress >= 1) return 1;
   const [firstX, firstY, secondX, secondY] = points;
   const component = (parameter, first, second) => 3 * parameter * (1 - parameter) ** 2 * first + 3 * parameter ** 2 * (1 - parameter) * second + parameter ** 3;
-  let low = 0;
-  let high = 1;
-  for (let iteration = 0; iteration < 40; iteration++) {
-    const middle = (low + high) / 2;
-    if (component(middle, firstX, secondX) < progress) low = middle;
-    else high = middle;
+  let parameter;
+  if (firstX === 0 && secondX === 0) parameter = Math.cbrt(progress);
+  else if (firstX === 1 && secondX === 1) parameter = 1 - Math.cbrt(1 - progress);
+  else {
+    const reverse = progress > 0.5, target = reverse ? 1 - progress : progress;
+    const first = reverse ? 1 - secondX : firstX, second = reverse ? 1 - firstX : secondX;
+    let low = 0, high = 1;
+    for (let iteration = 0; iteration < 40; iteration++) {
+      const middle = (low + high) / 2;
+      if (component(middle, first, second) < target) low = middle;
+      else high = middle;
+    }
+    parameter = reverse ? 1 - (low + high) / 2 : (low + high) / 2;
   }
-  return component((low + high) / 2, firstY, secondY);
+  return parameter > 0.5 ? 1 - component(1 - parameter, 1 - secondY, 1 - firstY) : component(parameter, firstY, secondY);
 }

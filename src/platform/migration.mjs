@@ -46,7 +46,7 @@ export function uploadedEntries(files) {
 async function textEntry(entry) { return entry ? decodeLegacy(await (await entry.getFile()).arrayBuffer()) : ''; }
 
 export async function scanMigration(entries, sourceName, { includeBackupCharts = false } = {}) {
-  if (!entries.some(entry => /^resources\//i.test(entry.path))) throw new Error('请选择包含 Resources 的 RPE 主文件夹（通常是 PhiEditer），不是源码或 build 目录');
+  if (!entries.some(entry => /^resources\//i.test(entry.path))) throw new Error(t('migration.s8a606fd'));
   const ignored = includeBackupCharts ? [] : entries.filter(entry => isBackupChartFile(entry.path)).map(entry => entry.path);
   entries = entries.filter(entry => includeBackupCharts || !isBackupChartFile(entry.path));
   const lookup = new Map(entries.map(entry => [entry.path.toLowerCase(), entry]));

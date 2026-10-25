@@ -8,6 +8,20 @@ import { noiseSampleHandle, samplingTarget, fitNoiseSampleView } from '../src/co
 import { previewPositionScale } from '../src/core/editor-display.mjs';
 import { createChart } from '../src/core/chart.mjs';
 
+test('噪域编辑只查询可见生命周期，保留原顺序、边界命中及撤销后的索引更新', () => {
+  let chart = createChart();
+  chart.blockAreaList = Array.from({ length: 15000 }, (_, index) => createNoiseArea(index, index + 2));
+  const editor = Object.assign(Object.create(NoiseAreaEditor.prototype), { getContext: () => ({ session: { chart } }) });
+  const actual = editor.visibleAreas(7000, 7001);
+  const expected = chart.blockAreaList.flatMap((area, index) => index + 2 >= 7000 && index <= 7001 ? [index] : []);
+  assert.deepEqual(actual.map(entry => entry.index), expected);
+  const index = editor.areaIndex; editor.visibleAreas(7001, 7002); assert.equal(editor.areaIndex, index);
+  const original = chart;
+  chart = { ...chart, blockAreaList: chart.blockAreaList.map((area, index) => index === 0 ? createNoiseArea(7000, 7001) : area) };
+  assert.equal(editor.visibleAreas(7000, 7001)[0].index, 0); assert.notEqual(editor.areaIndex, index);
+  chart = original; assert.deepEqual(editor.visibleAreas(7001, 7000).map(entry => entry.index), expected);
+});
+
 const interval = (start, end, readyFlash) => ({ startTime: fromNumber(start), endTime: fromNumber(end), readyFlash });
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-7, `${actual} != ${expected}`);
 
@@ -81,6 +95,12 @@ test('虚线支持旧预闪布尔值，并在 BPM 变化后更新缓存', () => 
   const nextTempo = new TempoMap([{ startTime: fromNumber(0), bpm: 60 }]);
   editor.getContext = () => ({ tempo: nextTempo }); editor.y = beat => 900 - nextTempo.seconds(beat) * 100;
   near(strokes(editor, area)[1][1], editor.y(1.5));
+});
+
+test('零时长激活事件在噪域概览中仍显示完整预闪虚线', () => {
+  const area = createNoiseArea(0, 10); area.activeIntervals = [interval(4, 4, 0.5)];
+  const tempo = new TempoMap([{ startTime: fromNumber(0), bpm: 120 }]), editor = distributionEditor(tempo), points = strokes(editor, area);
+  assert.equal(points.length, 2); near(points[0][1], editor.y(4)); near(points[1][1], editor.y(3));
 });
 
 test('噪域内部短事件首尾相接时仅标注连续组范围，放大仍不堆叠内部端点', () => {

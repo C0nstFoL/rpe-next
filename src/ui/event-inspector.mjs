@@ -43,14 +43,15 @@ export function renderEventInspector(session, tempo, currentBeat, reportError, n
   const container = document.querySelector('#event-properties'); container.replaceChildren();
   const entries = inspectorEntries(session); const event = entries[0]?.event; const eventType = entries[0]?.type;
   document.querySelector('#event-selection-count').textContent = t('event-inspector.s50000b6', { p0: entries.length });
-  if (!event) { const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = t('event-inspector.s5f3f7e8'); container.append(hint); return; }
+  if (!event) { const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = t('event-inspector.s04d3c47') + (session.rpeEventDrag !== true ? t('event-inspector.sa14758e') : t('event-inspector.s57ae1bc')) + t('event-inspector.s9adc988'); container.append(hint); return; }
   if (eventType === 'paintEvents') { renderShaderInspector(container, session, reportError, () => renderEventInspector(session, tempo, currentBeat, reportError, notify)); return; }
   const safely = action => { try { action(); } catch (error) { reportError(error); } };
   const valueKind = (type, value) => type === 'colorEvents' && Array.isArray(value) ? 'array' : type === 'textEvents' && typeof value === 'string' ? 'text' : Array.isArray(value) ? 'array' : 'number';
   const valueTitle = eventType === 'alphaEvents' ? [t('event-inspector.s7ff4e31'), t('event-inspector.s85fe18b')] : eventType === 'speedEvents' ? [t('event-inspector.s681e916'), t('event-inspector.s0e1d31f')] : eventType === 'colorEvents' ? [t('event-inspector.s37eb2f2'), t('event-inspector.s3bf81a3')] : eventType === 'textEvents' ? [t('event-inspector.s7aaf80e'), t('event-inspector.s70ef707')] : [t('event-inspector.s532cd47'), t('event-inspector.s00005a6')];
   const fields = [['startTime', t('event-inspector.s087c451'), 'beat'], ['endTime', t('event-inspector.sc4d3fa4'), 'beat'], ['start', valueTitle[0], valueKind(eventType, event.start)], ['end', valueTitle[1], valueKind(eventType, event.end)], ['easingLeft', t('event-inspector.s2fbff0e'), 'number'], ['easingRight', t('event-inspector.sb38574e'), 'number'], ['linkgroup', t('event-inspector.s50136f9'), 'number']];
+  const boundaryFields = [];
   const constrainNumber = (key, value) => {
-    if (eventType === 'alphaEvents' && (key === 'start' || key === 'end')) return Math.trunc(Math.max(0, Math.min(255, value)));
+    if (eventType === 'alphaEvents' && (key === 'start' || key === 'end')) return Math.trunc(Math.min(255, value));
     if (key === 'easingLeft' || key === 'easingRight') return Math.max(0, Math.min(1, value));
     if (key === 'linkgroup') return Math.max(0, Math.round(value));
     return value;
@@ -152,7 +153,7 @@ export function renderEventInspector(session, tempo, currentBeat, reportError, n
     const input = document.createElement('input'); input.type = kind === 'number' ? 'number' : 'text'; input.step = 'any'; input.setAttribute('aria-label', t('event-inspector.s21d101a', { p0: title }));
     input.dataset.rpenField = key; label.dataset.rpenField = key;
     if (key === 'easingLeft' || key === 'easingRight') { input.min = 0; input.max = 1; }
-    if (eventType === 'alphaEvents' && (key === 'start' || key === 'end')) { input.min = 0; input.max = 255; }
+    if (eventType === 'alphaEvents' && (key === 'start' || key === 'end')) { input.max = 255; input.title = t('event-inspector.s845b6a4'); }
     if (eventType === 'speedEvents' && (key === 'start' || key === 'end')) { input.min = -20; input.max = 20; }
     if (key === 'linkgroup') { input.min = 0; input.step = 1; }
     input.value = kind === 'beat' ? formatBeat(event[key]) : kind === 'array' ? event[key].join(', ') : event[key] ?? (key === 'easingRight' ? 1 : 0);
@@ -188,7 +189,7 @@ export function renderEventInspector(session, tempo, currentBeat, reportError, n
         controls.append(open); label.append(controls); container.append(label); container.insertBefore(sampling.panel, label); continue;
       }
     }
-    label.append(controls); container.append(label);
+    label.append(controls); if (key === 'easingLeft' || key === 'easingRight') boundaryFields.push(label); else container.append(label);
   }
   const lockLabel = document.createElement('label'); lockLabel.className = 'field'; lockLabel.append(t('event-inspector.s7787450'));
   const lock = document.createElement('input'); lock.type = 'checkbox'; lock.checked = Boolean(event.inst); lock.setAttribute('aria-label', t('event-inspector.sdb6c851'));
@@ -222,6 +223,7 @@ export function renderEventInspector(session, tempo, currentBeat, reportError, n
   context.save(); context.strokeStyle = '#8da4c7'; context.setLineDash([3, 3]);
   for (const boundary of [event.easingLeft ?? 0, event.easingRight ?? 1]) { const x = 10 + Math.max(0, Math.min(1, boundary)) * 240; context.beginPath(); context.moveTo(x, 10); context.lineTo(x, 88); context.stroke(); }
   context.restore();
+  container.append(...boundaryFields);
   const bezierLabel = document.createElement('label'); bezierLabel.className = 'field'; bezierLabel.append('Bezier');
   const enabled = document.createElement('input'); enabled.type = 'checkbox'; enabled.checked = Boolean(event.bezier); enabled.setAttribute('aria-label', t('event-inspector.sde81b79'));
   enabled.onchange = () => safely(() => applyEventTransform(session, t('event-inspector.s4b025f7'), current => ({ ...current, bezier: Number(enabled.checked), bezierPoints: Array.isArray(current.bezierPoints) && current.bezierPoints.length === 4 && current.bezierPoints.slice(2).some(Number) ? current.bezierPoints : [0, 0, 1, 1] })));

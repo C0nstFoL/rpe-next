@@ -3,17 +3,24 @@ import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join, relative } from 'node:path';
 import { parse } from '../src/core/vendor/acorn.mjs';
+import { AgentSourceIndex } from '../src/core/agent-source.mjs';
 
 const root = new URL('../dist/', import.meta.url);
 const entries = await readdir(root, { recursive: true, withFileTypes: true });
 const site = new URL('https://example.com/rpe-next/');
 const names = new Set(entries.filter(entry => entry.isFile()).map(entry => relative(fileURLToPath(root), join(entry.parentPath, entry.name)).replaceAll('\\', '/')));
 assert.ok(names.has('LICENSE') && names.has('NOTICE') && names.has('.nojekyll'));
-for(const protocol of ['EDITOR-SKIN','MOD','GLOBAL-EVENTS'])assert.ok(names.has(`protocols/${protocol}-PROTOCOL.zh-CN.md`));
+for(const protocol of ['EDITOR-SKIN','MOD','GLOBAL-EVENTS','AI-AGENT'])assert.ok(names.has(`protocols/${protocol}-PROTOCOL.zh-CN.md`));
 assert.ok(names.has('protocols/CHART-VERSION-CONTROL.zh-CN.md'));
+assert.ok(names.has('protocols/AUDIO-SEPARATION.zh-CN.md'));
+const sourceBundle = JSON.parse(await readFile(new URL('assets/agent-source.json', root), 'utf8'));
+const sourceIndex = new AgentSourceIndex(sourceBundle);
+for (const file of sourceBundle.files) if (names.has(file.path)) assert.equal(file.text, await readFile(new URL(file.path, root), 'utf8'), 'source snapshot: ' + file.path);
+assert.ok((await sourceIndex.query({ action: 'search', query: 'trajectoryChart', path: 'src/application/' })).total > 0);
+assert.ok(!sourceBundle.files.some(file => file.path.startsWith('.local-tools/') || file.path.endsWith('DESKTOP-STORAGE.zh-CN.md') || file.path.endsWith('OFFICIAL-IMPORT.zh-CN.md')));
 const mods=JSON.parse(await readFile(new URL('assets/mods/index.json',root),'utf8'));
 assert.deepEqual(mods.map(mod=>mod.directory),['sky-dodge','pixel-miner','spatial-camera']);
-for (const name of names) assert.match(name, /^(?:index\.html|styles\.css|LICENSE|NOTICE|protocols\/(?:(?:EDITOR-SKIN|MOD|GLOBAL-EVENTS)-PROTOCOL|CHART-VERSION-CONTROL)\.zh-CN\.md|schemas\/(?:mod-(?:v1\.schema\.json|api-v1\.d\.ts)|editor-skin-(?:v1\.schema|components\.v1)\.json)|\.nojekyll|assets\/.+|src\/(?:core|application|platform|ui|locales)\/.+|src\/i18n\.mjs)$/);
+for (const name of names) assert.match(name, /^(?:index\.html|styles\.css|LICENSE|NOTICE|protocols\/(?:(?:EDITOR-SKIN|MOD|GLOBAL-EVENTS|AI-AGENT)-PROTOCOL|CHART-VERSION-CONTROL|AUDIO-SEPARATION)\.zh-CN\.md|schemas\/(?:mod-(?:v1\.schema\.json|api-v1\.d\.ts)|editor-skin-(?:v1\.schema|components\.v1)\.json)|\.nojekyll|assets\/.+|src\/(?:core|application|platform|ui|locales)\/.+|src\/i18n\.mjs)$/);
 function checkReference(reference, file) {
   const resolved = new URL(reference, new URL(file, site));
   assert.ok(resolved.href.startsWith(site.href), `${file}: reference escapes site: ${reference}`);

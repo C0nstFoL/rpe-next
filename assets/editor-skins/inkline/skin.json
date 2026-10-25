@@ -1868,6 +1868,12 @@
       }
     },
     {
+      "selector": "@inspector:has([data-panel=ai]:not([hidden]))",
+      "set": {
+        "padding-bottom": "0"
+      }
+    },
+    {
       "selector": "@inspector-tabs",
       "set": {
         "padding": "0 8px",
@@ -3762,6 +3768,7 @@
         "diagnose",
         "history-panel",
         "version-control-tool",
+        "ai-tool",
         "collaboration-tool"
       ]
     }

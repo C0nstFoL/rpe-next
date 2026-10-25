@@ -3,6 +3,7 @@ import { createChartExport, download, suggestDownloadName } from '../platform/fi
 import { chartExportStem } from '../core/export-filename.mjs';
 import { DEFAULT_TRAJECTORY_SPLIT } from '../core/trajectory-simplify.mjs';
 import { diagnoseNoiseAreas } from '../core/noise-areas.mjs';
+import { DEFAULT_BEZIER_EXPORT_MARGIN } from '../core/bezier-compat.mjs';
 import { t } from '../i18n.mjs';
 
 export function showExportDialog(chart, assets, chartName, onExport, identifier, { includeBackupCharts = false } = {}) {
@@ -43,8 +44,13 @@ export function showExportDialog(chart, assets, chartName, onExport, identifier,
   const toleranceLabel = document.createElement('label'); toleranceLabel.className = 'field'; toleranceLabel.append(t('export-dialog.s413683d'), tolerance);
   const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = t('export-dialog.s9f1c3f8');
   settings.append(simplifyLabel, toleranceLabel, hint); host.append(settings);
-  const sync = () => { unusedLabel.hidden = unusedHint.hidden = format.value.endsWith(':json'); settings.hidden = format.value.startsWith('next:'); tolerance.disabled = !simplify.checked; removeLabel.hidden = !chart.blockAreaList?.length || format.value.startsWith('next:'); removeGlobalLabel.hidden = !hasGlobalEvents || format.value.startsWith('next:'); };
-  format.onchange = () => { suggestName(); sync(); }; simplify.onchange = sync; sync();
+  const clampBezier = document.createElement('input'); clampBezier.type = 'checkbox'; clampBezier.checked = false;
+  field(t('export-dialog.s37ee0de'), clampBezier); const clampLabel = clampBezier.closest('label');
+  const margin = document.createElement('input'); margin.type = 'number'; margin.min = '0.001'; margin.max = '0.25'; margin.step = '0.001'; margin.value = DEFAULT_BEZIER_EXPORT_MARGIN;
+  field(t('export-dialog.s8ee1ff0'), margin); const marginLabel = margin.closest('label');
+  const bezierHint = document.createElement('p'); bezierHint.className = 'hint'; bezierHint.textContent = t('export-dialog.s2572162'); host.append(bezierHint);
+  const sync = () => { const legacy = format.value.startsWith('rpe:'); unusedLabel.hidden = unusedHint.hidden = format.value.endsWith(':json'); settings.hidden = !legacy; tolerance.disabled = !simplify.checked; removeLabel.hidden = !chart.blockAreaList?.length || !legacy; removeGlobalLabel.hidden = !hasGlobalEvents || !legacy; clampLabel.hidden = bezierHint.hidden = !legacy; marginLabel.hidden = !legacy || !clampBezier.checked; margin.disabled = !legacy || !clampBezier.checked; };
+  format.onchange = () => { suggestName(); sync(); }; simplify.onchange = clampBezier.onchange = sync; sync();
   const apply = document.querySelector('#modal-apply'); apply.hidden = false; apply.textContent = t('export-dialog.s1888967');
   apply.onclick = () => {
     try {
@@ -52,7 +58,7 @@ export function showExportDialog(chart, assets, chartName, onExport, identifier,
       if (noiseIssues.length && !acknowledgement.checked) throw new Error(t('export-dialog.s4094dae'));
       if (compatibility === 'rpe' && chart.blockAreaList?.length && !removeNoise.checked) throw new Error(t('export-dialog.sac6ba5f'));
       if (compatibility === 'rpe' && hasGlobalEvents && !removeGlobal.checked) throw Error(t('export-dialog.se25f82b'));
-      const result = createChartExport(chart, assets, chartName, { includeUnusedFiles: unused.checked, includeBackupCharts, compatibility, format: container, compact: compact.checked, name: name.value, identifier, removeNoiseAreas: compatibility === 'rpe' && removeNoise.checked, removeGlobalEvents: compatibility === 'rpe' && removeGlobal.checked, split: { simplify: simplify.checked, tolerance: Number(tolerance.value) } });
+      const result = createChartExport(chart, assets, chartName, { includeUnusedFiles: unused.checked, includeBackupCharts, compatibility, format: container, compact: compact.checked, name: name.value, identifier, clampBezier: compatibility === 'rpe' && clampBezier.checked, bezierMargin: Number(margin.value), removeNoiseAreas: compatibility === 'rpe' && removeNoise.checked, removeGlobalEvents: compatibility === 'rpe' && removeGlobal.checked, split: { simplify: simplify.checked, tolerance: Number(tolerance.value) } });
       const filename = download(result.blob, result.name); document.querySelector('#modal').close(); onExport(filename, container);
     } catch (error) { document.querySelector('#modal-error').textContent = error.message; }
   };

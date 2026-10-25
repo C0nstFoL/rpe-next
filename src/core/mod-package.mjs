@@ -7,8 +7,7 @@ export const MOD_LIMITS = Object.freeze({ files: 2048, bytes: 128 * 1024 * 1024,
 const identifier = /^[a-z][a-z0-9-]{0,63}$/;
 const fail = message => { throw new Error(t('mod-package.s64b3ca6') + message); };
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
-// Manifest text may be a plain string or a per-locale map
-// (`{ "zh-CN": "…", "en-US": "…" }`), matching editor skins.
+// Manifest text may be a plain string or a per-locale map, matching editor skins.
 const textLimit = (value, limit, required = false) => isLocalizedMap(value)
   ? Object.keys(value).length > 0 && Object.values(value).every(text => typeof text === 'string' && text.length <= limit && (!required || text.trim()))
   : typeof value === 'string' && value.length <= limit && (!required || Boolean(value.trim()));
@@ -26,7 +25,6 @@ export function modManifest(source) {
   if (source.settings !== undefined && (!object(source.settings) || Object.keys(source.settings).length > 100)) fail(t('mod-package.s1daf273'));
   for (const [key,definition] of Object.entries(source.settings ?? {})) {
     if (!identifier.test(key) || !object(definition) || !textLimit(definition.label, 120, true) || !['boolean','number','text','color','select','shortcut'].includes(definition.type)) fail(t('mod-package.s9a6842c') + key);
-    if (definition.description !== undefined && !textLimit(definition.description, 2000)) fail(t('mod-package.s9a6842c') + key);
     if (definition.type === 'select' && (!object(definition.options) || !Object.keys(definition.options).length || Object.keys(definition.options).length>200 || Object.entries(definition.options).some(([key,label])=>key.length>2000||!textLimit(label,2000)))) fail(t('mod-package.sa9e55a1'));
     if (definition.type === 'number' && (!Number.isFinite(definition.min) || !Number.isFinite(definition.max) || definition.min > definition.max)) fail(t('mod-package.sce0b9c5'));
     if (definition.step!==undefined&&(!Number.isFinite(definition.step)||definition.step<=0))fail(t('mod-package.sc2ef5f2'));

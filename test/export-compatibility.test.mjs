@@ -13,6 +13,33 @@ import { parseInfo } from '../src/platform/legacy-text.mjs';
 const encode = text => new TextEncoder().encode(text);
 const decode = bytes => new TextDecoder().decode(bytes);
 
+test('PEZ 的 extra.json 始终包含当前 BPM，空特效也能满足 Phira 的解析要求', async () => {
+  const chart = createChart(); chart.effects = [];
+  chart.BPMList = [{ bpm: 172, startTime: [16, 1, 2] }, { bpm: 86, startTime: [0, 0, 1] }, { bpm: 129, startTime: [8, 0, 1] }];
+  const expected = [{ time: [0, 0, 1], bpm: 86 }, { time: [8, 0, 1], bpm: 129 }, { time: [16, 1, 2], bpm: 172 }];
+  for (const compatibility of ['next', 'rpe']) for (const compact of [true, false]) for (const existing of [false, true]) {
+    const assets = new Map(existing ? [['extra.json', encode('{"effects":[],"bpm":120,"custom":"keep"}')]] : []);
+    const before = structuredClone(chart), previous = structuredClone(assets);
+    const result = createChartExport(chart, assets, 'chart.json', { compatibility, format: 'pez', compact });
+    const entries = await readZip(await result.blob.arrayBuffer()), text = decode(entries.get('extra.json')), extra = JSON.parse(text);
+    assert.deepEqual(extra.bpm, expected); assert.deepEqual(extra.effects, []); assert.equal(extra.custom, existing ? 'keep' : undefined);
+    assert.equal(text.includes('\n'), !compact); assert.deepEqual(chart, before); assert.deepEqual(assets, previous);
+    const tempo = new TempoMap(chart.BPMList), exportedTempo = new TempoMap(extra.bpm.map(entry => ({ startTime: entry.time, bpm: entry.bpm })));
+    for (const beat of [0, 4, 8, 10, 16.5, 24]) assert.equal(exportedTempo.seconds(beat), tempo.seconds(beat));
+  }
+});
+
+test('已有 extra.json 未启用内联特效时补全 BPM 并保留原始特效、视频和未知字段', () => {
+  const chart = createChart(); chart.BPMList[0].bpm = 86;
+  const effect = { shader: 'grayscale', start: [0, 0, 1], end: [4, 0, 1], vars: { factor: 1 } };
+  const original = { effects: [effect], videos: [{ path: 'clip.mp4', time: [0, 0, 1] }], custom: { value: 42 } };
+  const bytes = encode(JSON.stringify(original)), assets = new Map([['nested/EXTRA.JSON', bytes]]);
+  const output = packageEntries(chart, assets, 'nested/chart.json');
+  assert.deepEqual(JSON.parse(decode(output.get('nested/EXTRA.JSON'))), { ...original, bpm: [{ time: [0, 0, 1], bpm: 86 }] });
+  assert.deepEqual(assets.get('nested/EXTRA.JSON'), bytes);
+  assert.equal(packageEntries(chart, new Map(), 'chart.json').has('extra.json'), false);
+});
+
 test('JSON 与 PEZ 默认紧凑导出，可关闭且不改变属性、文本空白或负零', async () => {
   const chart = createChart(); chart.META.name = '  保留 空格\n和换行  ';
   chart.judgeLineList[0].eventLayers[0].moveXEvents[0].start = -0;

@@ -63,6 +63,17 @@ test('偏移在速度之前应用，Hold 判定后头部隐藏，负透明度隐
   assert.deepEqual(runtime.visibleNotes(0.5, { ...state, alpha: -1 }), []);
 });
 
+test('透明度事件按全部事件层求和，负值隐藏全部音符，零值仍保留Tap和Hold', () => {
+  const chart = createChart(), line = chart.judgeLineList[0], tempo = new TempoMap(chart.BPMList);
+  line.notes = [createNote(1, 1, 0), createNote(2, 1, 100, 4)];
+  line.eventLayers[0].alphaEvents = [createEvent(100)];
+  for (const [value, expected] of [[-101, 0], [-100, 2], [-99, 2], [-500, 0]]) {
+    line.eventLayers[1] = { alphaEvents: [createEvent(value)] };
+    const runtime = new LineRuntime(line, tempo), state = runtime.state(0);
+    assert.equal(state.alpha, 100 + value); assert.equal(runtime.visibleNotes(0, state).length, expected);
+  }
+});
+
 test('控制曲线采用右端点缓动，Y 控制为零时不漏掉远距离音符', () => {
   const curve = new ControlCurve([{ x: 0, alpha: 0, easing: 1 }, { x: 100, alpha: 1, easing: 1 }], 'alpha');
   assert.equal(curve.value(50), 0.5);

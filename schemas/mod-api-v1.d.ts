@@ -111,7 +111,7 @@ export interface Editor {
   /** Backend-neutral record. id and storageRevision are opaque identifiers, not paths. */
   readonly libraryProject: any;
   loop: {start: number; end: number} | null;
-  audio: any; playback: any; preview: any; realtimePreview: any; timeline: any;
+  audio: any; audioSources: any; audioOnsets: any; audioAnalysis: any; playback: any; preview: any; realtimePreview: any; timeline: any;
   skin: any; images: any; hitSounds: any; editorSkins: any; noteSkins: any; noiseEditor: any; eventSampler: any;
   trajectoryPanel: any; textLinesPanel: any; noiseFitPanel: any;
   noiseTrackingPanel: any; multiEdit: any; batchControls: any; collaboration: any;
@@ -141,6 +141,14 @@ export interface Editor {
   };
 }
 export interface ModApi {
+  agent: {
+    register(definition: {
+      name: string; description: string; access: 'read' | 'edit' | 'dangerous';
+      parameters: Record<string, unknown>;
+      prepare(args: any, context: {signal: AbortSignal}): Promise<AgentCommandPlan> | AgentCommandPlan;
+    }): Dispose;
+    list(): Array<{type: 'function'; function: {name: string; description: string; parameters: any}}>;
+  };
   readonly version: 1; readonly id: string; readonly manifest: ModManifest;
   readonly editor: Editor; readonly signal: AbortSignal;
   dispose(cleanup: () => unknown): Dispose;
@@ -184,6 +192,11 @@ export interface ModApi {
   globalEvents: GlobalEventsApi;
   lockEditing(options?: {reason?: string; roots?: string[]}): Dispose;
   importInternal(path: string): Promise<any>;
+}
+export interface AgentCommandPlan {
+  summary?: string; details?: unknown; access?: 'read' | 'edit' | 'dangerous';
+  valid?(): boolean;
+  apply(context: {signal: AbortSignal}): unknown | Promise<unknown>;
 }
 export interface ModHost {
   apiVersion: 1; editor: Editor;

@@ -104,8 +104,7 @@ export class EditorSkins {
       variant.value = draft.variant; variant.onchange = () => { draft.variant = variant.value; change(); }; field(t('editor-skins.s4ce86dc'), variant);
     }
     for (const [key, definition] of Object.entries(record.skin.parameters ?? {})) {
-      const label = localizedValue(definition.label);
-      const input = document.createElement(definition.type === 'select' ? 'select' : 'input'); input.setAttribute('aria-label', label); input.dataset.skinParameter = key;
+      const input = document.createElement(definition.type === 'select' ? 'select' : 'input'); const label = localizedValue(definition.label); input.setAttribute('aria-label', label); input.dataset.skinParameter = key;
       if (definition.type === 'select') input.append(...Object.entries(definition.options).map(([value, label]) => new Option(localizedValue(label), value)));
       else input.type = definition.type === 'boolean' ? 'checkbox' : definition.type === 'number' ? 'number' : 'color';
       if (definition.type === 'number') { input.min = definition.min; input.max = definition.max; input.step = definition.step ?? 1; }
@@ -193,7 +192,7 @@ export class EditorSkins {
     this.drafts[id] = appearance;
     if (this.current === id) { this.cancelPreview(); await this.use(id); }
     else { this.options[id] = structuredClone(appearance); this.persistOptions(); if (this.select.value === id) this.showDetails(); }
-    this.message.textContent = t('editor-skins.s0f800c0', { p0: record.skin.name });
+    this.message.textContent = t('editor-skins.s0f800c0', { p0: localizedValue(record.skin.name) });
   }
   async remove() {
     const id = this.select.value; const record = this.records.get(id); if (!record || record.builtin || !confirm(t('editor-skins.scfdb86a', { p0: record.skin.name }))) return;

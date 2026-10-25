@@ -9,7 +9,7 @@ import { DEFAULT_CHART_NAME } from './chart.mjs';
 
 // Older builds stored the *translated* default group, so both spellings count
 // as "no group" when reading existing projects.
-const UNGROUPED = new Set(['', '未分组', 'Ungrouped']);
+const UNGROUPED = new Set(['', t('labels.s8de957a'), 'Ungrouped']);
 
 export function isUngrouped(group) {
   return UNGROUPED.has(String(group ?? '').trim());

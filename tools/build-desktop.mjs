@@ -15,7 +15,7 @@ await mkdir(output, { recursive: true });
 await cp(runtime, output, { recursive: true, filter: path => !path.endsWith('default_app.asar') });
 await rename(join(output, 'electron.exe'), join(output, 'RePhiEdit-Next.exe'));
 const application = join(output, 'resources', 'app');
-for (const name of ['desktop', 'src/core', 'src/application', 'src/platform', 'src/ui', 'src/locales', 'src/i18n.mjs', 'assets', 'index.html', 'styles.css', 'LICENSE', 'NOTICE', 'protocols', 'schemas', 'tools/smoke-mods.mjs', 'tools/smoke-native.mjs', 'tools/smoke-asset-library.mjs', 'tools/smoke-settings-renderer.js', 'tools/smoke-saving.mjs']) {
+for (const name of ['desktop', 'src/core', 'src/application', 'src/platform', 'src/ui', 'src/locales', 'src/i18n.mjs', 'assets', 'index.html', 'styles.css', 'LICENSE', 'NOTICE', 'protocols/EDITOR-SKIN-PROTOCOL.zh-CN.md', 'protocols/MOD-PROTOCOL.zh-CN.md', 'protocols/GLOBAL-EVENTS-PROTOCOL.zh-CN.md', 'protocols/AI-AGENT-PROTOCOL.zh-CN.md', 'protocols/AUDIO-SEPARATION.zh-CN.md', 'protocols/CHART-VERSION-CONTROL.zh-CN.md', 'schemas', 'tools/smoke-mods.mjs', 'tools/smoke-native.mjs', 'tools/smoke-asset-library.mjs', 'tools/smoke-settings-renderer.js', 'tools/smoke-saving.mjs', 'tools/smoke-agent.mjs', 'tools/smoke-agent-upgrade.mjs', 'tools/smoke-audio.mjs']) {
   await mkdir(dirname(join(application, name)), { recursive: true });
   await cp(join(root, name), join(application, name), { recursive: true });
 }
@@ -33,6 +33,8 @@ await writeFile(join(output, '使用说明.txt'), '\uFEFF' + [
   '音乐、曲绘等素材独立去重保存，设置、皮肤、模组及恢复记录随库保存。%APPDATA%\\rpe-next-desktop 保留运行配置、缓存和库位置。',
   '同一 Windows 用户更新或移动程序后自动继承设置和谱面库；不需要把设置复制进新版程序目录。',
   '谱面信息中的“打开谱面所在文件夹”可打开已保存项目的本地存档目录。',
+  '首次使用音频分析时，需自行选择运行环境、模型和缓存的存放位置，建议使用空间充足的非系统盘；已有运行环境保留原位。',
+  '音频分析中的“模型与缓存位置”可查看和迁移目录；“清理音频缓存”经确认后清理所有谱面的分析结果和下载、临时缓存，保留模型、环境、谱面和原音乐。',
   '旧桌面数据首次启动时自动复制并校验，旧数据库保留；中断后下次继续。',
   '删除项目进入回收站；设置中可恢复、永久删除、清理恢复记录及备份整个库到独立文件夹。',
   '桌面版与网页版谱面库独立；可导入 PEZ 或在谱面库迁移原 RPE 文件夹。',

@@ -4,7 +4,6 @@ import '../platform/locale-bootstrap.mjs';
 import { EditorSession } from '../application/session.mjs';
 import { FrameLimiter, validFpsLimit } from '../core/frame-timing.mjs';
 import { assertChart, createChart, diagnose, EVENT_TYPES, previewLimitations } from '../core/chart.mjs';
-import { chartDisplayName } from '../core/labels.mjs';
 import { beatValue, parseBeat, formatBeat, fromNumber, upperBound } from '../core/beat.mjs';
 import { TempoMap } from '../core/tempo.mjs';
 import { AudioTransport } from '../platform/audio.mjs';
@@ -54,6 +53,10 @@ import { EditorPlayback } from '../application/playback.mjs';
 import { readEditorPreferences, writeEditorPreferences } from '../platform/editor-preferences.mjs';
 import { ProjectHome } from './home.mjs';
 import { createSettingsPanel } from './settings.mjs';
+import { currentLocale, setLocale, t } from '../i18n.mjs';
+import { localeCandidates, preferredLocales, readLocalePreference, writeLocalePreference } from '../platform/locale.mjs';
+import { installDomTranslation } from './dom-i18n.mjs';
+import { chartDisplayName } from '../core/labels.mjs';
 import { showHotkeySettings } from './hotkey-settings.mjs';
 import { AutoSaveClock } from '../application/autosave.mjs';
 import { ManualSaveQueue } from '../application/manual-save.mjs';
@@ -90,12 +93,11 @@ import { DEFAULT_EDITOR_PREFERENCES, DEFAULT_SETTINGS } from '../core/default-se
 import { appendLineShortcutDigit } from '../core/line-switch.mjs';
 import { installNumericExpressionInputs } from './numeric-expression-input.mjs';
 import { TimeReadouts } from './time-readouts.mjs';
-import { currentLocale, setLocale, t } from '../i18n.mjs';
-import { localeCandidates, preferredLocales, readLocalePreference, writeLocalePreference } from '../platform/locale.mjs';
-import { installDomTranslation } from './dom-i18n.mjs';
+import { AgentPanel } from './agent-panel.mjs';
+import { AudioSources } from '../application/audio-sources.mjs';
+import { AudioOnsets } from '../application/audio-onsets.mjs';
+import { mapperTiming } from '../core/audio-mapper.mjs';
 
-// Resolve the interface language before any UI text is created. An explicit
-// choice wins; otherwise the browser and migrated RPE settings decide.
 for (const candidate of preferredLocales({ stored: readLocalePreference() })) {
   if (setLocale(candidate).locale) break;
 }
@@ -104,14 +106,18 @@ document.documentElement.lang = currentLocale().locale;
 try { await initializeLocalPreferences(); }
 catch (error) {
   const host = document.createElement('div'); host.className = 'native-storage-migration';
-  const message = document.createElement('p'); message.textContent = t('app.sa0301be') + error.message + t('app.se81663c');
-  const retry = document.createElement('button'); retry.textContent = t('app.se2d53a6'); retry.onclick = () => location.reload();
+  const message = document.createElement('p'); message.textContent = t('app.storageInitFailed', { error: error.message });
+  const retry = document.createElement('button'); retry.textContent = t('app.retry'); retry.onclick = () => location.reload();
   host.append(message, retry); document.body.append(host); throw error;
 }
-if (globalThis.rpenDesktopStorage) globalThis.rpenFlushPreferences = flushLocalPreferences;
+if (globalThis.rpenDesktopStorage) {
+  globalThis.rpenFlushPreferences = async () => { await agentPanel?.flush(); await flushLocalPreferences(); };
+  globalThis.rpenPrepareClose = async () => { await agentPanel?.stopAndFlush(); await flushLocalPreferences(); };
+}
 
 const element = selector => document.querySelector(selector);
 let mods;
+let agentPanel;
 globalThis.__rpenModInputGate=true;
 for(const type of ['keydown','keyup','wheel','pointerdown','pointerup','mousedown','mouseup','click','dblclick','contextmenu','drop','dragstart','input','change','submit'])window.addEventListener(type,event=>{
   const runtime=mods?.runtime;
@@ -136,6 +142,7 @@ const displayFields = [
   ['force-simple-noise', 'forceSimpleNoise', false],
   ['judgement-offset', 'judgementOffset', 92],
   ['judgement-color', 'judgementColor', '#ffffff'],
+  ['rpe-event-drag', 'rpeEventDrag', DEFAULT_EDITOR_PREFERENCES.rpeEventDrag],
   ['default-line-thickness', 'lineScale', 1.5],
   ['line-switcher-enabled', 'lineSwitcher', true],
   ['clipboard-history-enabled', 'clipboardHistory', true],
@@ -149,11 +156,9 @@ const displayFields = [
 ];
 const settingsDialog = createSettingsPanel({
   onLocaleChange: (locale, previousLocale) => {
-    // Parts of the editor (skins, mods, toolbar buttons…) build their DOM once
-    // at startup, so a live switch would leave them in the old language. Reload
-    // instead and reopen the chart the user was editing.
+    // Skins, mods and toolbar buttons build their DOM once at startup, so a live
+    // switch would leave them in the old language. Reload and reopen the chart.
     if (hasDocument && (session.history.dirty || assetDirty || !libraryProject?.id)) {
-      // Report in the language the user is still looking at.
       if (previousLocale) setLocale(previousLocale);
       notify(t('notify.localeNeedsSave'), 'warning');
       return false;
@@ -164,7 +169,7 @@ const settingsDialog = createSettingsPanel({
     return true;
   },
 });
-// Static markup is translated once here; the language switch reloads the page.
+// Static markup is translated once here; switching reloads the page.
 installDomTranslation(() => { document.documentElement.lang = currentLocale().locale; renderSession(); });
 installNumericExpressionInputs();
 let session = new EditorSession();
@@ -172,8 +177,6 @@ let assets = new Map();
 let assetFolders = new Set();
 let assetDirty = false;
 let chartName = 'chart.json';
-// A brand-new chart stores the reference-language sentinel; show it localized.
-const chartTitle = () => chartDisplayName(session.chart.META.name);
 let recoveryId = crypto.randomUUID();
 let tempo = new TempoMap(session.chart.BPMList);
 let tempoEntries = session.chart.BPMList;
@@ -190,7 +193,7 @@ let editorPreferences = { ...DEFAULT_EDITOR_PREFERENCES, ...readEditorPreference
 const fileOptions = () => ({ includeBackupCharts: editorPreferences.includeBackupCharts === true });
 let atHome = true;
 let hasDocument = false;
-// Set right before a language switch reloads the page so the same chart reopens.
+// Set before a language switch reloads the page so the same chart reopens.
 const LOCALE_REOPEN_KEY = 'rpe-next-reopen-project';
 let previewReturnTime = 0;
 let placementContext;
@@ -243,6 +246,7 @@ for (const renderer of [preview, realtimePreview]) {
 }
 const eventSampler = new EventSampler(element('.stage'), () => ({ session, tempo, preview, realtimePreview, previewVisible: preview.visible, timeline, seconds: chartSeconds, playing: () => audio.playing, sampleAutoFit: element('#sample-auto-fit').checked, pairedMovementSampling: element('#paired-movement-sampling').checked }), { invalidate, pause: () => playback.pause(), notify });
 const audioAnalysis = new AudioAnalysis(element('#audio-analysis-overlay'), () => timeline, () => audio, () => persistEditor());
+const audioSources = new AudioSources(() => audio), audioOnsets = new AudioOnsets({ getTiming: sourceOffset => mapperTiming(session.chart, sourceOffset) }); audioAnalysis.attachSources(audioSources, notify, audioOnsets);
 let noteHoverTimer = null;
 let noteHoverKey = null;
 function clearNoteSourceToast() {
@@ -458,73 +462,72 @@ const reportError = error => {
   }
 };
 document.addEventListener('rpen-storage-blocked', () => notify(t('app.sc0d447d'), 'warning', 7000));
-// Tips are stored as keys so switching the language swaps the text too.
 const tipKeys = [
-  'app.s4bf04e3',
-  'app.s6861f58',
-  'app.s7b81457',
-  'app.s02fa461',
-  'app.saeff07b',
-  'app.s2b801b6',
-  'app.s7795e1c',
-  'app.sc5574a8',
-  'app.s99a95fb',
-  'app.sc9bc457',
-  'app.sd67584b',
-  'app.sad8e978',
-  'app.s18f7e80',
-  'app.sf35446f',
-  'app.sf50c3c5',
-  'app.s1ed117b',
-  'app.s860780f',
-  'app.saf9dadc',
-  'app.s7a89e84',
-  'app.s3f8c4d7',
-  'app.s5ed173f',
-  'app.s801fd0c',
-  'app.s61024c2',
-  'app.s2f3f064',
-  'app.s2fa0c57',
-  'app.s46e26f6',
-  'app.s58b1d6f',
-  'app.s26acb9c',
-  'app.s7bce64d',
-  'app.s9e43446',
-  'app.s02c2119',
-  'app.sc21eb7c',
-  'app.s4963c44',
-  'app.s9320781',
-  'app.sffe6b8a',
-  'app.sb329966',
-  'app.s1332d89',
-  'app.s4648271',
-  'app.s760f48e',
-  'app.s074da51',
-  'app.sce9623e',
-  'app.sd7c1b2e',
-  'app.s7dc5fa4',
-  'app.s15c86b5',
-  'app.s4a39c08',
-  'app.s6f9d89a',
-  'app.s669449c',
-  'app.sfd56c24',
-  'app.sa302181',
-  'app.s094100c',
-  'app.sfb6f94a',
-  'app.s3816d85',
-  'app.s53040c5',
-  'app.sa5551d9',
-  'app.sbc9e4e2',
-  'app.sb1d120a',
-  'app.sf47134d',
-  'app.s88df27a',
-  'app.s5d11416',
-  'app.s7ba89fe',
-  'app.sa668593',
-  'app.sa4488e7',
-  'app.s9c16d38',
-  'app.sd64fc07',
-  'app.sbff4832',
+  t('app.s4bf04e3'),
+  t('app.s6861f58'),
+  t('app.s7b81457'),
+  t('app.s02fa461'),
+  t('app.saeff07b'),
+  t('app.s2b801b6'),
+  t('app.s7795e1c'),
+  t('app.sc5574a8'),
+  t('app.s99a95fb'),
+  t('app.sc9bc457'),
+  t('app.sd67584b'),
+  t('app.sad8e978'),
+  t('app.s18f7e80'),
+  t('app.sf35446f'),
+  t('app.sf50c3c5'),
+  t('app.s1ed117b'),
+  t('app.s860780f'),
+  t('app.saf9dadc'),
+  t('app.s7a89e84'),
+  t('app.s3f8c4d7'),
+  t('app.s5ed173f'),
+  t('app.s801fd0c'),
+  t('app.s61024c2'),
+  t('app.s2f3f064'),
+  t('app.s2fa0c57'),
+  t('app.s46e26f6'),
+  t('app.s58b1d6f'),
+  t('app.s26acb9c'),
+  t('app.s7bce64d'),
+  t('app.s9e43446'),
+  t('app.s02c2119'),
+  t('app.sc21eb7c'),
+  t('app.s4963c44'),
+  t('app.s9320781'),
+  t('app.sffe6b8a'),
+  t('app.sb329966'),
+  t('app.s1332d89'),
+  t('app.s4648271'),
+  t('app.s760f48e'),
+  t('app.s074da51'),
+  t('app.sce9623e'),
+  t('app.sd7c1b2e'),
+  t('app.s7dc5fa4'),
+  t('app.s15c86b5'),
+  t('app.s4a39c08'),
+  t('app.s6f9d89a'),
+  t('app.s669449c'),
+  t('app.sfd56c24'),
+  t('app.sa302181'),
+  t('app.s094100c'),
+  t('app.sfb6f94a'),
+  t('app.s3816d85'),
+  t('app.s53040c5'),
+  t('app.sa5551d9'),
+  t('app.sbc9e4e2'),
+  t('app.sb1d120a'),
+  t('app.sf47134d'),
+  t('app.s88df27a'),
+  t('app.s5d11416'),
+  t('app.s7ba89fe'),
+  t('app.sa668593'),
+  t('app.sa4488e7'),
+  t('app.s9c16d38'),
+  t('app.sd64fc07'),
+  t('app.sbff4832'),
 ];
 let tipIndex = 0;
 function rotateTip() { const target = element('#tips'); if (!target || editorPreferences.tipsEnabled === false || atHome) { if (target) target.textContent = ''; return; } target.textContent = t(tipKeys[tipIndex++ % tipKeys.length]); }
@@ -663,8 +666,7 @@ const home = new ProjectHome(async id => {
     } else if (renamed) session.commit(t('app.sf1249c2'), { ...session.chart, META: { ...session.chart.META, name: project.chart.META.name } });
   }
 });
-// After a language switch the page reloads; reopen the chart that was open so
-// the user lands back where they were.
+// After a language switch the page reloads; reopen the chart that was open.
 try {
   const reopen = sessionStorage.getItem(LOCALE_REOPEN_KEY);
   if (reopen) { sessionStorage.removeItem(LOCALE_REOPEN_KEY); home.openProject(reopen).catch(reportError); }
@@ -702,13 +704,16 @@ subscribeLibrary(change => {
 });
 
 function setHome(visible) {
+  if (visible) agentPanel?.reset();
+  if (visible) audioSources.reset(audio.buffer);
   if (visible && noiseTrackingPanel.sampling) noiseTrackingPanel.endSample();
   if (visible && collaboration.client.active) collaboration.client.leave();
   atHome = visible;
+  if (!visible && hasDocument) agentPanel?.attach(versionRepoId);
   if (visible) clearNoteSourceToast();
   if (visible) { lineSwitcher.reset(); hitSounds.onlyCurrentLine = false; element('#mute-current-line')?.setAttribute('aria-pressed', 'false'); element('#mute-current-line')?.classList.remove('active'); }
   if (visible) { lineInfoVisible = false; element('#line-info-overlay')?.setAttribute('hidden', ''); }
-  element('#document-name').textContent = visible ? t('app.sc3dbce4') : `${session.history.dirty ? '● ' : ''}${chartTitle()}`;
+  element('#document-name').textContent = visible ? t('doc.home') : `${session.history.dirty ? '● ' : ''}${chartDisplayName(session.chart.META.name || chartName)}`;
   element('#home').hidden = !visible;
   element('.workspace').hidden = visible;
   element('.transport').hidden = visible;
@@ -825,6 +830,7 @@ function openGlobalEvents() {
   renderSession();
 }
 const globalEventsTool = document.createElement('button'); globalEventsTool.id = 'global-events-tool'; globalEventsTool.textContent = t('app.s895a20e'); element('#noise-areas-tool').after(globalEventsTool);
+const aiTool = document.createElement('button'); aiTool.id = 'ai-tool'; aiTool.textContent = t('app.s9efe3ea'); element('#history-panel').before(aiTool);
 globalEventsTool.onclick = openGlobalEvents;
 element('#close-global-events').onclick = () => { globalEvents.close(); renderSession(); };
 element('#noise-areas-tool').addEventListener('click', openNoisePanel);
@@ -950,10 +956,11 @@ function renderSession() {
   session.tempo = tempo; session.division = timeline.division;
   session.cutDensity = Number(element('#event-cut-density').value);
   session.dragSensitivity = Number(element('#event-drag-sensitivity').value);
+  session.rpeEventDrag = timeline.rpeEventDrag;
   updateLineInfo();
   session.eventWheelSteps = Object.fromEntries(['moveXEvents', 'moveYEvents', 'rotateEvents', 'alphaEvents', 'speedEvents', 'scaleXEvents', 'scaleYEvents'].flatMap((key, index) => Number.isFinite(preferences.originalSettings.scrollValueIncrement?.[index]) ? [[key, preferences.originalSettings.scrollValueIncrement[index]]] : []));
   timeline.origin = currentBeat();
-  element('#document-name').textContent = atHome ? t('app.sc3dbce4') : `${session.history.dirty ? '● ' : ''}${chartTitle()}`;
+  element('#document-name').textContent = atHome ? t('doc.home') : `${session.history.dirty ? '● ' : ''}${chartDisplayName(session.chart.META.name || chartName)}`;
   renderTimelineMarkers();
   element('#note-count').textContent = `${session.notes.length} notes`;
   const countEvents = line => [...(line.eventLayers ?? []), line.extended ?? {}].reduce((total, layer) => total + Object.entries(layer ?? {}).filter(([type, events]) => type !== 'paintEvents' && Array.isArray(events)).reduce((count, [, events]) => count + events.length, 0), 0) + shaderEvents(session.chart, session.chart.judgeLineList?.indexOf(line) ?? -1).length;
@@ -1041,6 +1048,7 @@ function renderSession() {
     else if (noiseEditor.active) noiseEditor.render();
     else if (multiEdit.committing) multiEdit.sync();
     else if (activePaneName === 'collaboration') collaboration.renderState();
+    else if (activePaneName === 'ai') {}
     else if (textLinesPanel.active) textLinesPanel.sync();
     else if (noiseFitPanel.active) noiseFitPanel.sync();
     else if (noiseTrackingPanel.active) noiseTrackingPanel.sync();
@@ -1070,8 +1078,9 @@ function renderSession() {
 session.addEventListener('change', renderSession);
 
 function replaceChart(chart, name, nextAssets = new Map(), nextFolders = [], options = {}) {
+  agentPanel?.reset();
   assertChart(chart);
-  if (!options.preserveRepoId) { versionRepoId = crypto.randomUUID(); versionControl?.detach(); }
+  if (!options.preserveRepoId) { versionRepoId = options.repoId ?? crypto.randomUUID(); versionControl?.detach(); }
   if (eventSampler.active) eventSampler.finish(false);
   noiseEditor.reset();
   globalEvents.reset();
@@ -1111,6 +1120,7 @@ function replaceChart(chart, name, nextAssets = new Map(), nextFolders = [], opt
   element('#scrubber').max = 600;
   renderSession();
   hasDocument = true; setHome(false);
+  agentPanel?.attach(versionRepoId);
   status(t('app.s5e07c0a', { p0: name }));
 }
 
@@ -1122,7 +1132,7 @@ function guardReplace(action) {
 
 async function loadCandidate(candidate, nextAssets, options = {}) {
   attachExternalEffects([candidate], nextAssets);
-  replaceChart(candidate.chart, candidate.name, nextAssets, options.folders ?? candidate.project?.assetFolders ?? [], options);
+  replaceChart(candidate.chart, candidate.name, nextAssets, options.folders ?? candidate.project?.assetFolders ?? [], { ...options, repoId: candidate.project?.vcsId ?? candidate.project?.id });
   libraryProject = candidate.project ?? null;
   if (candidate.project?.vcsId) versionRepoId = candidate.project.vcsId;
   syncProjectFolderButton();
@@ -1188,23 +1198,30 @@ function prependAudioSilence() {
   const apply = element('#modal-apply'); apply.hidden = false; apply.textContent = t('app.s95f5c3a');
   apply.onclick = async () => {
     element('#modal').close();
+    try { await applyAudioLeadingSilence({ targetSession, buffer, revision, seconds }); } catch (error) { reportError(error); }
+  };
+}
+
+async function applyAudioLeadingSilence({ targetSession, buffer, revision, seconds, signal }) {
     const button = element('#audio-leading-silence'); button.disabled = true; button.textContent = t('app.se86312b');
-    const cancelled = () => session !== targetSession || audio.loadRevision !== revision;
+    const cancelled = () => signal?.aborted || session !== targetSession || audio.loadRevision !== revision;
+    const check = () => { if (cancelled()) throw new DOMException(t('app.sd5286e8'), 'AbortError'); };
     try {
-      if (cancelled()) return;
+      check();
       playback.pause();
       const wave = await pcmWave(buffer, cancelled, seconds);
-      if (!wave || cancelled()) return;
+      check(); if (!wave) throw Error(t('app.sbb19d4e'));
       const bytes = new Uint8Array(await wave.arrayBuffer());
-      if (cancelled()) return;
+      check();
       const sourceName = resourceReferences(session.chart, assets, chartName).song || 'music';
       const stem = sourceName.replaceAll('\\', '/').split('/').at(-1).replace(/\.[^.]+$/, '') + '-leading';
       let name = stem + '.wav'; let suffix = 2;
       while (assetBytes(assets, name, chartName)) name = `${stem}-${suffix++}.wav`;
-      if (await loadMusic(bytes, name, true, false)) notify(t('app.sad632ef'), 'success');
-    } catch (error) { reportError(error); }
+      if (!await loadMusic(bytes, name, true, false)) throw Error(t('app.s5402e57'));
+      notify(t('app.sad632ef'), 'success');
+      return { applied: true, name, seconds, undoable: false, offsetUnchanged: true, needsSave: true };
+    }
     finally { button.disabled = false; button.textContent = t('app.s763d8cd'); invalidate(); }
-  };
 }
 
 function seekBeat(value, pause = true) {
@@ -1220,6 +1237,7 @@ async function togglePlayback() {
 
 function save() {
   noiseEditor.flush();
+  agentPanel?.flush().catch(reportError);
   if (!persistenceRequested) { persistenceRequested = true; requestPersistence().then(() => storagePanel.refresh()).catch(() => {}); }
   editorSkinSignal('save-started');
   mods?.runtime.emit('editor:save-started',{});
@@ -1517,7 +1535,7 @@ listen('#bpm', () => { activatePane('bpm'); renderBpmPanel(session, element('#bp
 listen('#audio-leading-silence', prependAudioSilence);
 listen('#assets', () => { activatePane('assets'); assetLibrary.render(); });
 listen('#audio-analysis-tool', () => {
-  audioAnalysis.enabled = true; activatePane('audio-analysis'); audioAnalysis.render(element('#audio-analysis-panel')); audioAnalysis.draw(offsetSeconds()); persistEditor();
+  activatePane('audio-analysis'); audioAnalysis.render(element('#audio-analysis-panel')); audioAnalysis.draw(offsetSeconds());
 });
 function renderHistoryPanel() {
   const host = element('#history-results'); if (!host) return;
@@ -1725,6 +1743,17 @@ window.addEventListener('keydown', event => {
 }, true);
 window.addEventListener('keyup', event => { if (!lineSwitchModifierMatches(event)) lineSwitchDigits = 0; }, true);
 window.addEventListener('blur', () => { lineSwitchDigits = 0; });
+function setEventEndpointDragHeld(held) {
+  if (!held) for (const interaction of [timeline.eventInteraction, globalEvents.timeline.eventInteraction]) if (interaction.drag?.endpoint && !interaction.drag.frozen) interaction.drag.frozen = interaction.previewEvent(interaction.drag.event);
+  timeline.eventEndpointDragHeld = globalEvents.timeline.eventEndpointDragHeld = held;
+  timeline.eventInteraction.updateCursor(); globalEvents.timeline.eventInteraction.updateCursor(); noiseEditor.syncHover(); invalidate();
+}
+window.addEventListener('blur', () => {
+  setEventEndpointDragHeld(false);
+  if (timeline.eventInteraction.drag?.endpoint) timeline.cancelPlacement();
+  if (globalEvents.timeline.eventInteraction.drag?.endpoint) globalEvents.timeline.cancelPlacement();
+  if (noiseEditor.drag?.endpoint) noiseEditor.cancelGesture();
+});
 window.addEventListener('keydown', async event => {
   if (mods?.runtime.locks.size) return;
   const target = event.target;
@@ -1734,6 +1763,10 @@ window.addEventListener('keydown', async event => {
   const hasMultiSelection = [...(session.multiLineSelection?.values() ?? [])].some(values => values.size) || [...(session.multiEventSelection?.values() ?? [])].some(values => values.size);
   const hasSelection = globalEvents.active ? globalEvents.selection.size > 0 : noiseEditor.active ? noiseEditor.selection.size > 0 : Boolean(session.selection.size || session.eventSelection.size || hasMultiSelection);
   const action = shortcutAction(event, preferences, area, { hasSelection: hasSelection && !preview.visible });
+  if (action === 'DragLong') {
+    if (timeline.rpeEventDrag === true && !preview.visible && !isTextEntry(event.target)) { setEventEndpointDragHeld(true); event.preventDefault(); event.stopImmediatePropagation(); }
+    return;
+  }
   if (globalEvents.active) {
     try { if (globalEvents.action(action, event)) { event.preventDefault(); event.stopImmediatePropagation(); return; } }
     catch (error) { event.preventDefault(); reportError(error); return; }
@@ -1814,6 +1847,7 @@ window.addEventListener('keydown', async event => {
   } catch (error) { event.preventDefault(); reportError(error); }
 }, true);
 window.addEventListener('keyup', event => {
+  if (timeline.eventEndpointDragHeld && shortcutReleased(event, preferences.hotkeys.DragLong ?? DEFAULT_HOTKEYS.DragLong)) setEventEndpointDragHeld(false);
   if (mods?.runtime.locks.size) return;
   pasteGesture.up(event);
   if (timeline.clipboardMode?.mirror || timeline.clipboardMode?.keepTime) { timeline.clipboardMode = {}; invalidate(); }
@@ -1955,14 +1989,6 @@ requestAnimationFrame(frame);
 function applyPreferences(next) {
   next = { ...next, hotkeys: { ...DEFAULT_HOTKEYS, ...next.hotkeys } };
   preferences = next;
-  // Migrated RPE settings carry an interface language; honour it unless the
-  // user already picked one explicitly in this editor.
-  if (!readLocalePreference()) {
-    for (const candidate of localeCandidates(next.originalSettings)) {
-      const applied = setLocale(candidate);
-      if (applied.locale) { document.documentElement.lang = applied.locale; break; }
-    }
-  }
   audio.setVolume(editorPreferences.volume ?? next.settings.volume);
   element('#volume').value = audio.volume;
   hitSounds.setVolume(editorPreferences.hitVolume ?? next.settings.hitVolume);
@@ -2095,6 +2121,8 @@ function applyDisplaySettings() {
   timeline.judgementColor = element('#judgement-color').value;
   timeline.eventValueFontSize = Number(element('#event-value-size').value); timeline.eventValueThreshold = Number(element('#event-value-threshold').value); timeline.eventCurveThreshold = Number(element('#event-curve-threshold').value); timeline.eventOpacity = Number(element('#event-opacity').value); timeline.eventBarWidth = Number(element('#event-bar-width').value);
   timeline.seamlessEvents = element('#seamless-events').checked;
+  timeline.rpeEventDrag = globalEvents.timeline.rpeEventDrag = element('#rpe-event-drag').checked;
+  if (!timeline.rpeEventDrag) setEventEndpointDragHeld(false);
   timeline.drawEventCurves = element('#draw-event-curves').checked;
   timeline.selectionInterval = globalEvents.timeline.selectionInterval = Number(element('#selection-interval').value);
   selectionIntervalPanel.sync();
@@ -2145,10 +2173,10 @@ for (const [id, key] of displayFields.filter(([, key]) => key !== 'selectionInte
 timeline.eventPlacementType = timeline.eventTypes[0];
 
 const modEditor={
-  get session(){return session;},get chart(){return session.chart;},get tempo(){return tempo;},get assets(){return assets;},get preferences(){return preferences;},get editorPreferences(){return editorPreferences;},get chartName(){return chartName;},
+  get session(){return session;},get chart(){return session.chart;},get tempo(){return tempo;},get assets(){return assets;},get preferences(){return preferences;},get editorPreferences(){return editorPreferences;},get chartName(){return chartName;},get agentWorkspaceId(){return versionRepoId;},
   get hasDocument(){return hasDocument&&!atHome;},get home(){return atHome;},get activePane(){return activePaneName;},
   get dirty(){return session.history.dirty||assetDirty;},get libraryProject(){return libraryProject;},get loop(){return loop;},set loop(value){loop=value;},
-  audio,playback,preview,realtimePreview,timeline,skin,images,hitSounds,editorSkins,noteSkins,noiseEditor,eventSampler,trajectoryPanel,textLinesPanel,noiseFitPanel,noiseTrackingPanel,multiEdit,batchControls,collaboration,globalEvents,globalEventRegistry,openGlobalEvents,versionControl,
+  audio,audioSources,audioOnsets,audioAnalysis,playback,preview,realtimePreview,timeline,skin,images,hitSounds,editorSkins,noteSkins,noiseEditor,eventSampler,trajectoryPanel,textLinesPanel,noiseFitPanel,noiseTrackingPanel,multiEdit,batchControls,linePanel,collaboration,globalEvents,globalEventRegistry,openGlobalEvents,versionControl,
   chartSeconds,offsetSeconds,currentBeat,invalidate,render:renderSession,notify,save,activatePane,
   commit:(label,chart)=>session.commit(label,chart),replace:(chart,name=chartName)=>replaceChart(chart,name),
   seek:(seconds,{music=false,pause=true}={})=>{playback.seek(seconds+(music?0:offsetSeconds()),pause);invalidate();},
@@ -2166,4 +2194,25 @@ const modEditor={
     let done=false;return()=>{if(done)return;done=true;playback.pause();togglePreview(snapshot.visible,true,false,{autoplay:false});preview.allLines=snapshot.allLines;preview.lineNumbers=snapshot.lineNumbers;preview.lineArrows=snapshot.lineArrows;preview.lineTint=snapshot.lineTint;preview.cameraX=snapshot.cameraX;preview.viewDivisor=snapshot.viewDivisor;preview.collisionGeometry=snapshot.collisionGeometry;activatePane(snapshot.pane);invalidate();};
   },
 };
+agentPanel = new AgentPanel(modEditor, { activate: activatePane, notify, prependSilence: applyAudioLeadingSilence,
+  writeAsset: async (path, bytes, binding) => {
+    const references = resourceReferences(session.chart, assets, chartName);
+    if (!bytes) {
+      if (Object.values(references).includes(path) || session.chart.judgeLineList.some(line => line.Texture === path)) throw Error(t('app.s31f8305'));
+      assets.delete(path); assetDirty = true; images.load(session.chart, assets, chartName); invalidate(); return { deleted: path, needsSave: true, undoable: false };
+    }
+    if (binding === 'song' || references.song === path) { if (!await loadMusic(bytes, path, true, false)) throw Error(t('app.s5402e57')); }
+    else { assets.set(path, bytes); assetDirty = true; if (binding === 'background') session.commit(t('app.sf699ea9'), { ...session.chart, META: { ...session.chart.META, background: path } }); images.load(session.chart, assets, chartName); }
+    hitSounds.setProject(session.chart, assets, chartName); invalidate(); return { written: path, bytes: bytes.length, needsSave: true, undoable: false };
+  },
+  capture: async () => {
+    const renderer = preview.visible ? preview : realtimePreview;
+    const visible = renderer.visible; renderer.visible = true;
+    try { renderer.draw(session.chart, tempo, chartSeconds(), session.lineIndex); } finally { renderer.visible = visible; }
+    const canvas = document.createElement('canvas'); canvas.width = Math.min(1600, renderer.canvas.width); canvas.height = Math.max(1, Math.round(renderer.canvas.height * canvas.width / Math.max(1, renderer.canvas.width)));
+    const context = canvas.getContext('2d'); context.drawImage(renderer.canvas, 0, 0, canvas.width, canvas.height);
+    for (const layer of [renderer.shaderCanvas, renderer.overlayCanvas]) if (layer?.style.visibility === 'visible') context.drawImage(layer, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/png');
+  },
+});
 mods=new ModManager(modEditor,{notify,invalidate});

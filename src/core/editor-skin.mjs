@@ -16,7 +16,7 @@ export const EDITOR_SKIN_COMPONENTS = Object.freeze({
     'seek', 'undo', 'redo', 'copy', 'cut', 'paste', 'mirror', 'delete', 'notes-only', 'game-ui', 'reset-camera', 'mute-current-line',
     'metadata', 'bpm', 'assets', 'audio-analysis-tool', 'noise-areas-tool', 'curve-notes', 'curve-trajectory', 'text-lines-tool',
     'noise-fit-tool', 'noise-tracking-tool', 'multi-line-tool', 'diagnose', 'history-panel', 'collaboration-tool', 'version-control-tool'].map(id => [id, '#' + id])),
-  'version-control-panel': '#version-control-panel',
+  'version-control-panel': '#version-control-panel', 'ai-tool': '#ai-tool', 'ai-panel': '#ai-panel', 'tab-ai': '#ai-tab',
   'line-controls': '.line-select-group', 'beat-controls': '.beat-seek', 'view-buttons': '.view-buttons', 'multi-line-controls': '.multi-line-head-controls',
   'offset-control': 'label:has(#offset)', 'rate-control': 'label:has(#rate)', 'pitch-control': '.preserve-pitch',
   'time-progress': '.scrubber-wrap', 'time-readouts': '.time-readouts', clock: '#clock', 'beat-display': '#beat-display', 'bpm-display': '#bpm-display',
@@ -37,7 +37,7 @@ export const EDITOR_SKIN_MOVABLE = ['new', 'open', 'save', 'export', 'library', 
   'curve-notes', 'curve-trajectory', 'text-lines-tool', 'noise-fit-tool', 'noise-tracking-tool', 'multi-line-tool', 'diagnose', 'history-panel', 'collaboration-tool', 'version-control-tool',
   'seek', 'notes-only', 'game-ui', 'reset-camera', 'mute-current-line', 'tools', 'view-controls', 'view-buttons', 'line-controls', 'beat-controls',
   'offset-control', 'rate-control', 'pitch-control', 'time-readouts', 'multi-line-controls', 'tab-notes', 'tab-events', 'tab-lines', 'tab-chart', 'tab-noise',
-  'tool-select', 'tool-tap', 'tool-hold', 'tool-flick', 'tool-drag', 'global-events-tool'];
+  'tool-select', 'tool-tap', 'tool-hold', 'tool-flick', 'tool-drag', 'global-events-tool', 'ai-tool'];
 export const EDITOR_SKIN_CANVASES = Object.freeze({ notes: '#notes', events: '#events', 'global-events': '#global-events-canvas', 'global-density': '.global-event-density', noise: '#noise-editor-canvas', density: '#note-density', history: '#history-strip', audio: '#audio-analysis-overlay', selection: '.selection-overlay', 'batch-preview': '', easing: '.easing-preview', bezier: '.bezier-editor', curve: '.curve-preview', 'text-lines': '.text-lines-preview', trajectory: '.trajectory-preview,.trajectory-preset-thumbnail', 'noise-fit': '.noise-fit-source', 'line-thumbnail': '.line-switcher-card canvas', 'clipboard-thumbnail': '.clipboard-thumbnail' });
 export const EDITOR_SKIN_BUILTINS = Object.freeze(Object.fromEntries(['folder', 'save', 'setting', 'help', 'play', 'replay', 'showback', 'jump', 'copy', 'shear', 'paste', 'delete0', 'switch', 'layout', 'return', 'info', 'waves', 'bezier', 'addline', 'mute'].map(name => [name, `rpe/Texture/icon/${name}.png`])));
 export const EDITOR_SKIN_IMPORTANT = /^(?:--(?:rpen|skin)-[a-z0-9-]+|color|background(?:-[a-z-]+)?|border(?:-[a-z-]+)?|outline(?:-[a-z-]+)?|font(?:-[a-z-]+)?|line-height|letter-spacing|text-[a-z-]+|width|height|min-width|max-width|min-height|max-height|padding(?:-[a-z-]+)?|margin(?:-[a-z-]+)?|gap|row-gap|column-gap|flex(?:-[a-z-]+)?|grid(?:-[a-z-]+)?|order|box-shadow|filter)$/;
@@ -65,8 +65,8 @@ function declarations(value, path) {
   if (!plain(value) || Object.keys(value).length > 100) fail(path + t('editor-skin.sb7a7763'));
   for (const [key, item] of Object.entries(value)) {
     if (!/^(?:--(?:skin|rpen)-[a-z0-9-]+|-?[a-z][a-z0-9-]*)$/.test(key) || /^(?:behavior|-moz-binding|all)$/.test(key)) fail(t('editor-skin.s57f9af3') + key);
-    // `content` and friends may be a per-locale map; every entry must be a safe value.
-    if (isLocalizedMap(item)) for (const text of Object.values(item)) cssValue(text);
+    // `content` and friends may be a per-locale map; every entry must be safe.
+    if (isLocalizedMap(item)) for (const entry of Object.values(item)) cssValue(entry);
     else cssValue(item);
   }
 }
@@ -81,7 +81,7 @@ function rules(items = [], depth = 0) {
       if (kind === 'startingStyle') { if (rule.startingStyle !== true) fail(t('editor-skin.se8d89c9')); }
       else {
         string(rule[kind], kind + t('editor-skin.sef02404'), 500);
-        if (/[{};@\\]|\/\*|\*\/|url\s*\(|(?:https?|data|javascript|file):/i.test(rule[kind]) || !/^[a-z0-9_ ():.\-,\/<>="'%#+*]+$/i.test(rule[kind])) fail(kind + ' 条件含非法字符');
+        if (/[{};@\\]|\/\*|\*\/|url\s*\(|(?:https?|data|javascript|file):/i.test(rule[kind]) || !/^[a-z0-9_ ():.\-,\/<>="'%#+*]+$/i.test(rule[kind])) fail(kind + t('editor-skin.sc48c110'));
       }
       rules(rule.rules, depth + 1);
     } else {
@@ -135,7 +135,7 @@ export function parseEditorSkin(files) {
   // Metadata and interface strings accept a per-locale map as well as a plain
   // string, so one skin package can ship several languages.
   const localizedString = (value, label, limit) => {
-    if (isLocalizedMap(value)) { if (!Object.keys(value).length) fail(label); for (const text of Object.values(value)) string(text, label, limit); return; }
+    if (isLocalizedMap(value)) { if (!Object.keys(value).length) fail(label); for (const entry of Object.values(value)) string(entry, label, limit); return; }
     string(value, label, limit);
   };
   localizedString(skin.name, t('editor-skin.sbc74380'), 80); if (skin.author !== undefined) string(skin.author, t('editor-skin.s698bea5'), 100);
@@ -213,8 +213,7 @@ export function parseEditorSkin(files) {
     if (group.id) groups.add(group.id);
     if (!group.id && ['label', 'direction', 'collapsible'].some(key => group[key] !== undefined)) fail(t('editor-skin.s20b449c'));
     if (group.collapsible !== undefined && (typeof group.collapsible !== 'boolean' || group.collapsible && !group.label)) fail(t('editor-skin.s7f31460'));
-    // Labels may be a per-locale map (`{ "zh-CN": "…", "en-US": "…" }`).
-    if (group.label !== undefined) for (const label of [group.label].flatMap(value => isLocalizedMap(value) ? Object.values(value) : [value])) string(label, t('editor-skin.s35aeafd'), 60);
+    if (group.label !== undefined) localizedString(group.label, t('editor-skin.s35aeafd'), 60);
     if (group.direction !== undefined && !['row', 'column'].includes(group.direction)) fail(t('editor-skin.sd6fcea7'));
     for (const item of group.items) { if (!EDITOR_SKIN_MOVABLE.includes(item) || organized.has(item)) fail(t('editor-skin.sbc5496a') + item); organized.add(item); }
   }

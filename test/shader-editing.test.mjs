@@ -12,6 +12,7 @@ import { TempoMap } from '../src/core/tempo.mjs';
 import { Timeline } from '../src/ui/timeline.mjs';
 import { Preview } from '../src/ui/preview.mjs';
 import { packageEntries } from '../src/platform/files.mjs';
+import { createNoiseArea } from '../src/core/noise-areas.mjs';
 
 const effect = (shader = 'grayscale', line = 0) => ({ shader, line, start: [0, 0, 1], end: [4, 0, 1], global: false, order: 0, vars: { factor: 0.5 } });
 const recordingContext = () => new Proxy({ calls: [] }, { get(target, key) { return key in target ? target[key] : (...args) => target.calls.push({ method: key, args, color: target.fillStyle, alpha: target.globalAlpha ?? 1 }); } });
@@ -181,6 +182,7 @@ test('场景、第一层 shader、UI、全部噪域、第二层 shader 依次合
 test('编辑背景预览给可见皮肤提供不透明场景，隐藏皮肤或简易渲染时恢复透明底', () => {
   globalThis.devicePixelRatio = 1;
   const chart = createChart(); chart.noiseAreaLayers = [{ id: 'default', name: '默认层' }, { id: 'water', name: '水面', skin: 'shader/Water' }];
+  chart.blockAreaList = [{ ...createNoiseArea(), layerId: 'water' }];
   const context = recordingContext(); const preview = new Preview(canvas(context));
   preview.visible = true; preview.applyShaders = false; preview.noisePreview.draw = () => {};
   const tempo = new TempoMap(chart.BPMList);
@@ -195,6 +197,9 @@ test('编辑背景预览给可见皮肤提供不透明场景，隐藏皮肤或�
   context.calls.length = 0; preview.noisePreview.simpleLayers.clear(); preview.noisePreview.forceSimple = true;
   preview.draw(chart, tempo, 0, 0);
   assert.ok(!context.calls.some(call => call.method === 'fillRect' && call.color === '#111'));
+  context.calls.length = 0; preview.noisePreview.forceSimple = false;
+  preview.draw({ ...chart, blockAreaList: [] }, tempo, 0, 0);
+  assert.ok(!context.calls.some(call => call.method === 'fillRect' && call.color === '#111'));
 });
 
 test('PEZ 更新所属 extra.json 并保留其他字段，其他项目只在包含未使用文件时保留', () => {
@@ -203,7 +208,7 @@ test('PEZ 更新所属 extra.json 并保留其他字段，其他项目只在包�
   const assets = new Map([['song/EXTRA.JSON', encode({ extension: 42, effects: [] })], ['other/extra.json', encode({ effects: ['keep'] })]]);
   const output = packageEntries(chart, assets, 'song/chart.json');
   const extra = JSON.parse(new TextDecoder().decode(output.get('song/EXTRA.JSON')));
-  assert.deepEqual(extra, { extension: 42, effects: chart.effects });
+  assert.deepEqual(extra, { extension: 42, bpm: [{ time: [0, 0, 1], bpm: 120 }], effects: chart.effects });
   assert.equal(output.has('other/extra.json'), false);
   assert.deepEqual(packageEntries(chart, assets, 'song/chart.json', { includeUnusedFiles: true }).get('other/extra.json'), assets.get('other/extra.json'));
   assert.deepEqual(JSON.parse(new TextDecoder().decode(assets.get('song/EXTRA.JSON'))).effects, []);

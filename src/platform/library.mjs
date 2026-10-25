@@ -102,8 +102,8 @@ export async function deleteProject(id, expectedRevision = null) {
 export function projectSummary(project, thumbnail) {
   return { version: 2, id: project.id, storageRevision: project.storageRevision ?? null, name: project.chart.META.name ?? project.chartName,
       chartName: project.chartName, identifier: project.identifier ?? project.info?.Path ?? project.chart?.META?.id ?? '', source: project.source, imported: project.imported, bytes: project.bytes,
-      // Empty means "ungrouped"; the name is localized only when displayed.
-      updated: project.updated ?? project.imported, group: project.group ?? project.info?.Group ?? '',
+      updated: project.updated ?? project.imported, // Empty means "ungrouped"; the name is localized only when displayed.
+      group: project.group ?? project.info?.Group ?? '',
       pinned: Boolean(project.pinned), archived: Boolean(project.archived), level: project.chart.META.level ?? '', charter: project.chart.META.charter ?? '',
       thumbnail, composer: project.chart.META.composer ?? '', lines: project.chart.judgeLineList?.length ?? 0,
       notes: (project.chart.judgeLineList ?? []).reduce((sum, line) => sum + (line.notes?.length ?? 0), 0) };
@@ -130,6 +130,18 @@ export async function readProject(id) {
 export const readProjectRevision = async id => { if (nativeStorage) { await nativeReady(); return nativeStorage.call('readRevision', id); } return access(['revisions'], 'readonly', transaction => transaction.objectStore('revisions').get(id)); };
 const readPreference = async key => nativeStorage ? (await nativeRead('preferences', key))?.value : access(['preferences'], 'readonly', transaction => transaction.objectStore('preferences').get(key));
 const writePreference = async (key, value) => { if (nativeStorage) { await nativeReady(); return nativeWrite('preferences', key, { id: key, value }); } return access(['preferences'], 'readwrite', transaction => transaction.objectStore('preferences').put(value, key)); };
+export { readPreference as readLibraryRecord, writePreference as writeLibraryRecord };
+export async function writeLibraryRecords(records, { guard } = {}) {
+  if (nativeStorage) { for (const record of records) await writePreference(record.key, record.value); return; }
+  const connection = await libraryDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = connection.transaction(['preferences'], 'readwrite', { durability: 'strict' }), store = transaction.objectStore('preferences'); let failure;
+    const write = () => { for (const record of records) store.put(record.value, record.key); };
+    if (guard) { const request = store.get(guard.key); request.onsuccess = () => { if (JSON.stringify(request.result ?? []) !== JSON.stringify(guard.value)) { failure = Error(t('library.s13653bb')); transaction.abort(); } else write(); }; } else write();
+    transaction.oncomplete = () => { connection.close(); resolve(); };
+    transaction.onabort = transaction.onerror = () => { connection.close(); reject(failure ?? transaction.error ?? Error(t('library.sca77fc2'))); };
+  });
+}
 export const readPreferences = () => readPreference('current');
 export const storePreferences = preferences => writePreference('current', preferences);
 export const readClipboardHistory = () => readPreference('clipboard-history');

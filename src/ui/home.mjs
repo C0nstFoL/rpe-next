@@ -102,8 +102,7 @@ export class ProjectHome {
     apply.onclick = async () => {
       try {
         if (!name.value.trim()) throw new Error(t('home.s9695a59'));
-        // An empty group is stored as an empty string, never as localized text.
-        await this.modify(project.id, source => ({ ...source, group: group.value.trim(), chart: { ...source.chart, META: { ...source.chart.META, name: name.value.trim() } } }));
+        await this.modify(project.id, source => ({ ...source, group: group.value.trim() || t('home.s8de957a'), chart: { ...source.chart, META: { ...source.chart.META, name: name.value.trim() } } }));
         document.getElementById('modal').close();
       } catch (error) { document.getElementById('modal-error').textContent = error.message; }
     };

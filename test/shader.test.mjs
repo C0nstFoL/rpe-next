@@ -3,7 +3,100 @@ import assert from 'node:assert/strict';
 import { createChart } from '../src/core/chart.mjs';
 import { TempoMap } from '../src/core/tempo.mjs';
 import { canonicalShaderName, ShaderRuntime } from '../src/core/shader.mjs';
-import { shaderViewport, fragmentSource, shaderDefaults } from '../src/ui/shader-pipeline.mjs';
+import { ShaderPipeline, shaderViewport, fragmentSource, shaderDefaults } from '../src/ui/shader-pipeline.mjs';
+
+test('shader 连续渲染复用输入纹理和中间纹理，仅在尺寸变化时重新分配', () => {
+  const allocations = [], uploads = [], draws = [];
+  const pipeline = new ShaderPipeline();
+  pipeline.gl = {
+    UNPACK_FLIP_Y_WEBGL: 1, TEXTURE_2D: 2, RGBA: 3, UNSIGNED_BYTE: 4, FRAMEBUFFER: 5,
+    pixelStorei() {}, bindTexture() {}, bindFramebuffer() {}, flush() {},
+    texSubImage2D(...args) { uploads.push(args); },
+  };
+  pipeline.sourceTexture = {}; pipeline.pingTexture = {}; pipeline.pongTexture = {};
+  pipeline.ensure = () => true;
+  pipeline.resizeTexture = (texture, width, height) => allocations.push({ texture, width, height });
+  pipeline.compile = () => ({});
+  pipeline.drawQuad = (...args) => draws.push(args);
+  const source = { width: 800, height: 600 }, target = { width: 0, height: 0, style: {} };
+  const passes = [{ shader: 'test', values: {} }];
+  assert.equal(pipeline.render(source, target, passes, 1, () => 'source'), true);
+  assert.equal(allocations.length, 3); assert.equal(uploads.length, 1);
+  assert.equal(pipeline.render(source, target, passes, 2, () => 'source'), true);
+  assert.equal(allocations.length, 3); assert.equal(uploads.length, 2); assert.equal(draws.length, 2);
+  source.width = 1024; source.height = 768;
+  pipeline.render(source, target, passes, 3, () => 'source');
+  assert.equal(allocations.length, 6); assert.equal(uploads.length, 3);
+  assert.ok(allocations.slice(3).every(entry => entry.width === 1024 && entry.height === 768));
+});
+
+test('侧边 shader 与主流程共用程序，缓存上传与模糊结果并保留独立的主视窗纹理', () => {
+  const uploads = [], draws = [], allocations = [];
+  const pipeline = new ShaderPipeline();
+  let textureId = 0;
+  pipeline.gl = { TEXTURE0: 0, TEXTURE1: 1, TEXTURE_2D: 2, FRAMEBUFFER: 3, COLOR_ATTACHMENT0: 4, RGBA: 5, UNSIGNED_BYTE: 6,
+    createTexture: () => ({ id: textureId++ }), activeTexture() {}, bindTexture() {}, bindFramebuffer() {}, framebufferTexture2D() {},
+    texSubImage2D(...args) { uploads.push(args.at(-1)); },
+  };
+  pipeline.framebuffer = {}; pipeline.configureTexture = () => {};
+  pipeline.resizeTexture = (texture, width, height) => allocations.push({ texture, width, height });
+  pipeline.compile = (name, source) => ({ name, source });
+  pipeline.drawQuad = (program, input, framebuffer, values, seconds, width, height) => draws.push({ name: program.name, input, framebuffer, values, width, height });
+  const source = { width: 512, height: 224 }, overlay = { width: 512, height: 224 }, mainTexture = {};
+  const filter = { sourceCanvas: source, sourceRevision: 1, overlayCanvas: overlay, blur: 37.5, brightness: .85,
+    effects: [{ shader: 'grayscale', global: false, values: {} }, { shader: 'glitch', global: true, values: {} }] };
+  const rect = { min: [.2, 0], max: [.8, 1] };
+  const render = () => pipeline.drawOverflowFilter(mainTexture, 2400, 1050, 180, rect, [1350, 900], filter, [], effect => effect.shader);
+  assert.equal(render(), true);
+  assert.deepEqual(uploads, [source, overlay]);
+  assert.deepEqual(draws.map(draw => draw.name), ['grayscale', 'overflow-overlay', 'glitch', 'overflow-filter', 'overflow-filter', 'overflow-compose']);
+  assert.ok(draws.slice(0, -1).every(draw => draw.width === 512 && draw.height === 224));
+  assert.equal(draws.at(-1).input, mainTexture); assert.equal(draws.at(-1).framebuffer, null);
+  assert.deepEqual(draws.at(-1).values.filterKeepMin, rect.min);
+  const count = allocations.length;
+  draws.length = 0;
+  render();
+  assert.equal(allocations.length, count); assert.equal(uploads.length, 2);
+  assert.deepEqual(draws.map(draw => draw.name), ['overflow-compose']);
+  filter.sourceRevision++;
+  draws.length = 0; render();
+  assert.equal(uploads.length, 4); assert.equal(draws.length, 6);
+});
+
+test('侧边合成融合到最后一个 shader，中央画面不经过额外全屏中间纹理', () => {
+  const draws = [], bindings = [], stages = [];
+  const pipeline = new ShaderPipeline();
+  pipeline.gl = {
+    UNPACK_FLIP_Y_WEBGL: 1, TEXTURE_2D: 2, RGBA: 3, UNSIGNED_BYTE: 4, FRAMEBUFFER: 5, TEXTURE1: 6,
+    pixelStorei() {}, bindFramebuffer() {}, framebufferTexture2D() {}, flush() {}, texSubImage2D() {}, activeTexture() {},
+    bindTexture(target, texture) { bindings.push(texture); },
+  };
+  pipeline.sourceTexture = {}; pipeline.pingTexture = {}; pipeline.pongTexture = {}; pipeline.framebuffer = {};
+  pipeline.ensure = () => true; pipeline.resizeTexture = () => {};
+  pipeline.compile = (name, source, overflow) => ({ name, overflow });
+  const filtered = {};
+  pipeline.prepareOverflowFilter = () => { stages.push('prepare'); return filtered; };
+  pipeline.drawOverflowFilter = () => assert.fail('不应额外进行全屏合成');
+  pipeline.drawQuad = (program, input, framebuffer, values) => { stages.push(program.name); draws.push({ program, input, framebuffer, values }); };
+  const passes = [{ shader: 'grayscale', values: { factor: 1 } }, { shader: 'vignette', values: { radius: 30 } }];
+  const source = { width: 800, height: 600 }, target = { width: 0, height: 0, style: {} };
+  const filter = { sourceCanvas: {}, blur: 25, brightness: 0.85, keepInside: true };
+  assert.equal(pipeline.render(source, target, passes, 180, pass => pass.shader, undefined, undefined, filter), true);
+  assert.deepEqual(stages, ['prepare', 'grayscale', 'vignette']);
+  assert.equal(draws[0].framebuffer, pipeline.framebuffer); assert.equal(draws[1].framebuffer, null);
+  assert.equal(draws[1].input, pipeline.pingTexture); assert.equal(draws[1].program.overflow, true);
+  assert.equal(draws[1].values.rpenOverflowTexture, 1); assert.equal(bindings.at(-1), filtered);
+  assert.deepEqual(passes[1].values, { radius: 30 }); assert.equal(pipeline.filterApplied, true);
+});
+
+test('融合 shader 仅替换窗口外输出，保留中央采样坐标并兼容 WebGL 两种版本', () => {
+  const source = 'varying vec2 uv; uniform sampler2D screenTexture; void main(){gl_FragColor=texture2D(screenTexture,uv);}';
+  const normal = fragmentSource(source), merged = fragmentSource(source, false, true), merged2 = fragmentSource(source, true, true);
+  assert.doesNotMatch(normal, /rpenOverflowTexture/);
+  assert.match(merged, /gl_FragColor = texture2D\(rpenOverflowTexture, v_texCoord\)/);
+  assert.match(merged2, /rpeFragColor = texture\(rpenOverflowTexture, v_texCoord\)/);
+  assert.match(merged, /rpeSample\(u_texture,rpeCoordinate\)/);
+});
 import { previewViewport } from '../src/core/editor-display.mjs';
 
 test('原版 Shader 名称和 effects 事件保持可解析并按拍数插值', () => {
