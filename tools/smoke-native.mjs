@@ -6,6 +6,7 @@ const run = (contents, fn, ...args) => contents.executeJavaScript(`(${fn})(...${
 
 export async function prepareNative(contents) {
   await run(contents, async () => {
+    localStorage.setItem('rpe-next-locale-v1', 'zh-CN');
     const { createChart } = await import('/src/core/chart.mjs');
     const { builtinEditorSkins } = await import('/src/platform/editor-skins.mjs');
     const { builtinMods } = await import('/src/platform/mods.mjs');
