@@ -7,23 +7,8 @@ export default {
     'app.storageInitFailed': '桌面存储未能完成初始化：{error}。旧数据仍保留。请检查磁盘空间和文件夹权限后重试。',
     'app.retry': '重试',
 
-
     'doc.untitled': '未命名谱面',
     'doc.home': '谱面库',
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     'units.ungrouped': '未分组',
 

@@ -1,6 +1,7 @@
 import { compileEditorSkin, editorSkinSelector, EDITOR_SKIN_COMPONENTS, EDITOR_SKIN_BUILTINS } from '../core/editor-skin.mjs';
 import { assetUrl } from '../core/asset-url.mjs';
 import { baseEditorSkinCss } from './editor-skin-base.mjs';
+import { isLocalizedMap, localizedValue } from '../i18n.mjs';
 import { setEditorCanvasSkin } from './editor-skin-canvas.mjs';
 import { emitModHook } from '../core/mod-hooks.mjs';
 import { t } from '../i18n.mjs';
@@ -98,7 +99,7 @@ export class EditorSkinRuntime {
         if (!destination) {
           destination = document.createElement(group.collapsible ? 'details' : 'div'); destination.className = 'skin-control-group'; destination.dataset.skinGroup = group.id;
           destination.dataset.direction = group.direction ?? 'row';
-          if (group.label) { const label = document.createElement(group.collapsible ? 'summary' : 'span'); label.className = 'skin-group-label'; label.textContent = group.label; destination.append(label); }
+          if (group.label) { const label = document.createElement(group.collapsible ? 'summary' : 'span'); label.className = 'skin-group-label'; label.textContent = localizedValue(group.label); destination.append(label); }
           if (group.collapsible) destination.open = true;
           slot.append(destination); this.groups.push(destination);
         }
@@ -116,8 +117,11 @@ export class EditorSkinRuntime {
       const selector = entry.selector.replace(/@([a-z][a-z0-9-]*)/g, (_, id) => EDITOR_SKIN_COMPONENTS[id]);
       for (const element of document.querySelectorAll(selector)) {
         let patches = this.patches.get(element); if (!patches) { patches = new Map(); this.patches.set(element, patches); }
-        for (const [key, value] of Object.entries(entry)) {
+        for (const [key, raw] of Object.entries(entry)) {
           if (key === 'selector') continue;
+          // Skin text may be a per-locale map; resolve it for the active language.
+          const value = isLocalizedMap(raw) ? localizedValue(raw) : raw;
+          if (value === undefined) continue;
           if (key === 'text') {
             if (element.matches('input,textarea,select,canvas') || element.closest('#editor-skin-settings')) continue;
             let node = [...element.childNodes].find(node => node.nodeType === 3 && node.textContent.trim());

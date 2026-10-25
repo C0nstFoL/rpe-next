@@ -10,20 +10,6 @@ export default {
     'doc.untitled': 'Untitled chart',
     'doc.home': 'Chart library',
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     'units.ungrouped': 'Ungrouped',
 
     'settings.language': 'Interface language',

@@ -134,7 +134,7 @@ export class EditorSkins {
       const record = await importEditorSkin(files, directory);
       const existing = this.records.get(record.skin.id);
       if (existing?.builtin) throw new Error(t('editor-skins.s60057f5'));
-      if (existing && existing.skin.id !== reloadingId && !confirm(t('editor-skins.s485b627', { p0: existing.skin.name }))) return;
+      if (existing && existing.skin.id !== reloadingId && !confirm(t('editor-skins.s485b627', { p0: localizedValue(existing.skin.name) }))) return;
       const prepared = await this.runtime.prepare({ ...record, skin: resolveEditorSkin(record.skin) });
       // Validate/decode everything before persisting or changing the UI.
       prepared.urls.forEach(url => URL.revokeObjectURL(url));
@@ -168,13 +168,13 @@ export class EditorSkins {
     } else {
       this.options[id] = structuredClone(appearance);
       const optionsSaved = this.persistOptions(), activeSaved = this.persistValue(ACTIVE_KEY, id);
-      this.rescueText.textContent = record?.skin.name ?? '';
+      this.rescueText.textContent = localizedValue(record?.skin.name) ?? '';
       if (optionsSaved && activeSaved) this.message.textContent = id === 'default' ? t('editor-skins.s4a4bb7f') : t('editor-skins.s0dee9c3');
     }
   }
   confirmPreview() {
     if (this.previewId === null) return;
-    const activeSaved = this.persistValue(ACTIVE_KEY, this.current); this.cancelPreview(); this.rescueText.textContent = this.records.get(this.current)?.skin.name ?? '';
+    const activeSaved = this.persistValue(ACTIVE_KEY, this.current); this.cancelPreview(); this.rescueText.textContent = localizedValue(this.records.get(this.current)?.skin.name) ?? '';
     this.options[this.current] = structuredClone(this.drafts[this.current]); const optionsSaved = this.persistOptions();
     if (activeSaved && optionsSaved) this.message.textContent = t('editor-skins.s830b0f9');
   }
@@ -195,7 +195,7 @@ export class EditorSkins {
     this.message.textContent = t('editor-skins.s0f800c0', { p0: localizedValue(record.skin.name) });
   }
   async remove() {
-    const id = this.select.value; const record = this.records.get(id); if (!record || record.builtin || !confirm(t('editor-skins.scfdb86a', { p0: record.skin.name }))) return;
+    const id = this.select.value; const record = this.records.get(id); if (!record || record.builtin || !confirm(t('editor-skins.scfdb86a', { p0: localizedValue(record.skin.name) }))) return;
     try {
       ++this.generation;
       if (this.current === id) await this.use('default');
