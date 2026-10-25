@@ -99,7 +99,7 @@ export class LinePanel {
     this.clearTextureUrls();
     const chart = session.chart; const lines = chart.judgeLineList ?? []; const names = groupNames(chart);
     this.host.replaceChildren();
-    const title = document.createElement('div'); title.className = 'panel-title'; const titleCount = document.createElement('small'); titleCount.textContent = t('line-panel.sfac04ca', { p0: lines.length }); title.append('判定线', titleCount);
+    const title = document.createElement('div'); title.className = 'panel-title'; const titleCount = document.createElement('small'); titleCount.textContent = t('line-panel.sfac04ca', { p0: lines.length }); title.append(t('transport.line'), titleCount);
     this.host.append(title);
     const actions = document.createElement('div'); actions.className = 'line-panel-actions';
     const add = document.createElement('button'); add.type = 'button'; add.textContent = t('line-panel.s119c201'); add.onclick = () => { const index = lines.length; this.commit(t('line-panel.s665c6b7'), { ...chart, judgeLineList: [...lines, createLine(`Line ${index + 1}`)] }, index); };

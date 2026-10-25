@@ -6,12 +6,9 @@ export default {
   messages: {
     'app.storageInitFailed': 'Desktop storage could not be initialized: {error}. Existing data is kept. Check free space and folder permissions, then retry.',
     'app.retry': 'Retry',
-
     'doc.untitled': 'Untitled chart',
     'doc.home': 'Chart library',
-
     'units.ungrouped': 'Ungrouped',
-
     'settings.language': 'Interface language',
     // Static markup (index.html).
     'markup.aria.49deaf7': "File",

@@ -1,17 +1,12 @@
-// Normalizes the locale catalogs: at most one blank line in a row, no trailing
-// whitespace, and a single trailing newline. Keeps the author's ordering.
+// Removes blank lines from the locale catalogs so entries form one compact
+// block. Comments and ordering are preserved.
 //   node tools/i18n-format.mjs
 import { readFile, writeFile } from 'node:fs/promises';
 
 for (const locale of ['zh-CN', 'en-US']) {
   const file = `src/locales/${locale}.mjs`;
   const lines = (await readFile(file, 'utf8')).split(/\r?\n/).map(line => line.replace(/\s+$/, ''));
-  const output = [];
-  for (const line of lines) {
-    if (!line && !output.at(-1)) continue;
-    output.push(line);
-  }
-  while (output.at(-1) === '') output.pop();
+  const output = lines.filter(line => line.length > 0);
   await writeFile(file, output.join('\n') + '\n');
-  console.log(`${file}: ${output.length} lines`);
+  console.log(`${file}: ${output.length} lines, 0 blank`);
 }
