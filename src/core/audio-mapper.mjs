@@ -1,5 +1,6 @@
 import { beatValue } from './beat.mjs';
 import { TempoMap } from './tempo.mjs';
+import { t } from '../i18n.mjs';
 
 export const MAPPER_SOURCE_REVISION = '0e2b0e387aab4b35c64b0b11b12d47578dea7587';
 export const MAPPER_MODELS = Object.freeze([
@@ -10,7 +11,7 @@ export const MAPPER_DEFAULTS = Object.freeze({ mapperModel: 'v32', mapperMode: 3
 const headTypes = new Set(['circle', 'slider_head', 'hold_note', 'spinner', 'drumroll', 'denden']);
 
 export function validateMapperSettings(settings) {
-  if (!MAPPER_MODELS.some(model => model.id === settings.mapperModel) || ![0, 3].includes(settings.mapperMode) || !Number.isFinite(settings.difficulty) || settings.difficulty < .1 || settings.difficulty > 15 || !Number.isSafeInteger(settings.seed) || settings.seed < 0 || settings.seed > 0xffffffff || typeof settings.useChartTiming !== 'boolean') throw Error('Mapperatorinator 参数无效');
+  if (!MAPPER_MODELS.some(model => model.id === settings.mapperModel) || ![0, 3].includes(settings.mapperMode) || !Number.isFinite(settings.difficulty) || settings.difficulty < .1 || settings.difficulty > 15 || !Number.isSafeInteger(settings.seed) || settings.seed < 0 || settings.seed > 0xffffffff || typeof settings.useChartTiming !== 'boolean') throw Error(t('audio-mapper.s5579aef'));
   return settings;
 }
 
@@ -20,10 +21,10 @@ export function mapperTiming(chart, sourceOffset = 0) {
 }
 
 export function selectMapperPeaks(objects, { startSeconds, endSeconds, minGap = .02 }) {
-  if (!Array.isArray(objects) || objects.length > 60000 || !Number.isFinite(startSeconds) || !(endSeconds > startSeconds) || !Number.isFinite(minGap) || minGap < .02 || minGap > 2) throw Error('生成的节奏数据或筛选参数无效');
+  if (!Array.isArray(objects) || objects.length > 60000 || !Number.isFinite(startSeconds) || !(endSeconds > startSeconds) || !Number.isFinite(minGap) || minGap < .02 || minGap > 2) throw Error(t('audio-mapper.s25ce911'));
   const grouped = new Map();
   for (const object of objects) {
-    if (!Number.isFinite(object.seconds) || !headTypes.has(object.type)) throw Error('生成的音符时间或类型无效');
+    if (!Number.isFinite(object.seconds) || !headTypes.has(object.type)) throw Error(t('audio-mapper.s56b6baf'));
     if (object.seconds < startSeconds - 1e-7 || object.seconds >= endSeconds - 1e-7) continue;
     const key = Math.round(object.seconds * 1000000), previous = grouped.get(key);
     if (previous) previous.multiplicity++;

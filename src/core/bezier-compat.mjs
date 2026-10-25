@@ -1,7 +1,8 @@
+import { t } from '../i18n.mjs';
 export const DEFAULT_BEZIER_EXPORT_MARGIN = 0.05;
 
 export function bezierExportMargin(value = DEFAULT_BEZIER_EXPORT_MARGIN) {
-  if (!Number.isFinite(value) || value < 0.001 || value > 0.25) throw Error('Bezier X 边界保护距离须在 0.001–0.25 之间');
+  if (!Number.isFinite(value) || value < 0.001 || value > 0.25) throw Error(t('bezier-compat.s9e4b6f8'));
   return value;
 }
 

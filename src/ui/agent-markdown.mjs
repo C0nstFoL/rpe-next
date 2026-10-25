@@ -1,3 +1,4 @@
+import { t } from '../i18n.mjs';
 export function agentLink(value) {
   try { const url = new URL(value); return ['https:', 'http:', 'mailto:'].includes(url.protocol) ? url.href : null; } catch { return null; }
 }
@@ -35,8 +36,8 @@ export function renderAgentMarkdown(target, source) {
       while (index < lines.length && !new RegExp('^\\s*' + fence[1][0] + '{' + fence[1].length + ',}\\s*$').test(lines[index])) codeLines.push(lines[index++]);
       if (index < lines.length) index++;
       const block = document.createElement('div'); block.className = 'agent-code';
-      const heading = document.createElement('div'); heading.className = 'agent-code-heading'; const language = document.createElement('small'); language.textContent = fence[2] || '代码';
-      const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = '复制'; copy.onclick = async () => { try { await navigator.clipboard.writeText(codeLines.join('\n')); copy.textContent = '已复制'; } catch { copy.textContent = '请选中复制'; } };
+      const heading = document.createElement('div'); heading.className = 'agent-code-heading'; const language = document.createElement('small'); language.textContent = fence[2] || t('agent-markdown.s33246dd');
+      const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = t('agent-markdown.s4edd1d0'); copy.onclick = async () => { try { await navigator.clipboard.writeText(codeLines.join('\n')); copy.textContent = t('agent-markdown.se381a57'); } catch { copy.textContent = t('agent-markdown.seb6f690'); } };
       const pre = document.createElement('pre'), code = document.createElement('code'); code.textContent = codeLines.join('\n'); pre.append(code); heading.append(language, copy); block.append(heading, pre); root.append(block); continue;
     }
     const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*$/);

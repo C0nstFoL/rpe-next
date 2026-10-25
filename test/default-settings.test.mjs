@@ -20,6 +20,7 @@ test('fresh browser and desktop preferences use the calibrated shared defaults',
   assert.equal(normalizeEditorPreferences({ noteSize: 5 }).noteSize, 10);
   assert.deepEqual(normalizeEditorPreferences({ pairedMovementSampling: false }), { pairedMovementSampling: false });
   assert.equal(DEFAULT_APPEARANCE.editorSkin, 'inkline');
+  assert.equal(DEFAULT_APPEARANCE.noteSkin, 'builtin-sea-of-dreams');
   assert.ok(!Object.keys(DEFAULT_SETTINGS).some(key => Object.hasOwn(DEFAULT_EDITOR_PREFERENCES, key)));
 });
 

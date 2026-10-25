@@ -5,6 +5,7 @@ import { noiseRenderingLayers, noiseLayerId } from '../core/noise-skin.mjs';
 import { NoiseSkinRenderer } from './noise-skin-renderer.mjs';
 import { previewNoiseGeometry } from '../core/editor-display.mjs';
 import { ResourceCache } from '../core/resource-cache.mjs';
+import { t } from '../i18n.mjs';
 
 const rank = { disabled: 0, ready: 1, active: 2 };
 const guideFonts = new WeakMap();
@@ -199,12 +200,12 @@ export class NoisePreview {
       const horizontal = this.width / 2 + entry.center.x * scale; const vertical = this.height / 2 - entry.center.y * scale;
       context.translate(horizontal, vertical); context.rotate(entry.rotation);
       if (typeof document !== 'undefined') {
-        const sprite = this.guideSprite(showNames ? entry.area.Name || `噪域 ${entry.index}` : '', `${Math.max(11, 30 * scale)}px RPEGame, sans-serif`, focused ? '#ffe39a' : '#ffc9b5');
+        const sprite = this.guideSprite(showNames ? entry.area.Name || t('noise-preview.s64fec24', { p0: entry.index }) : '', `${Math.max(11, 30 * scale)}px RPEGame, sans-serif`, focused ? '#ffe39a' : '#ffc9b5');
         if (sprite) { context.imageSmoothingEnabled = true; context.drawImage(sprite.canvas, sprite.left, sprite.top, sprite.width, sprite.height); context.restore(); continue; }
       }
       context.strokeStyle = focused ? '#ffe39a' : '#ffc9b5'; context.fillStyle = context.strokeStyle; context.lineWidth = 1.5;
       context.beginPath(); context.arc(0, 0, 3.5, 0, Math.PI * 2); context.moveTo(-8, 0); context.lineTo(8, 0); context.moveTo(0, -8); context.lineTo(0, 8); context.stroke();
-      if (showNames) { context.font = `${Math.max(11, 30 * scale)}px RPEGame, sans-serif`; context.textAlign = 'center'; context.textBaseline = 'bottom'; context.fillText(entry.area.Name || `噪域 ${entry.index}`, 0, -10); }
+      if (showNames) { context.font = `${Math.max(11, 30 * scale)}px RPEGame, sans-serif`; context.textAlign = 'center'; context.textBaseline = 'bottom'; context.fillText(entry.area.Name || t('noise-preview.s64fec24', { p0: entry.index }), 0, -10); }
       context.restore();
     }
   }

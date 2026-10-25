@@ -3,6 +3,7 @@ import { openDatabase, ensureStore, storageError } from './storage.mjs';
 import { transferProject } from './recovery-transfer.mjs';
 import { assertChart } from '../core/chart.mjs';
 import { nativeStorage, nativeReady, nativeWrite, nativeRead, nativeList, nativeAssetBytes } from './native.mjs';
+import { t } from '../i18n.mjs';
 
 export const libraryDatabase = () => openDatabase('rpe-next-library', 2, (connection, transaction) => {
   for (const name of ['projects', 'summaries', 'revisions']) ensureStore(connection, transaction, name, { keyPath: 'id' });
@@ -18,7 +19,7 @@ async function access(stores, mode, action) {
     catch (error) { transaction.abort(); connection.close(); reject(error); return; }
     transaction.oncomplete = () => { connection.close(); resolve(result?.result); };
     transaction.onerror = () => { connection.close(); reject(transaction.error); };
-    transaction.onabort = () => { connection.close(); reject(transaction.error ?? new Error('存储事务已取消')); };
+    transaction.onabort = () => { connection.close(); reject(transaction.error ?? new Error(t('library.secdb1a9'))); };
   });
 }
 
@@ -36,7 +37,7 @@ function publish(id, revision, deleted = false) {
 }
 export function projectConflict(id, expectedRevision, actualRevision) {
   return storageError({ name: 'ProjectConflictError', projectId: id, expectedRevision, actualRevision,
-    message: '此项目已被其他窗口修改或删除，已阻止覆盖。当前编辑仍保留，可导出 PEZ 或另存为新项目。' });
+    message: t('library.sa32940f') });
 }
 
 export function storeProject(project) {
@@ -77,7 +78,7 @@ export async function storeProjectDirect(project) {
       } catch (error) { failure = error; transaction.abort(); }
     };
     transaction.oncomplete = () => { connection.close(); resolve(revision); };
-    transaction.onabort = transaction.onerror = () => { connection.close(); reject(failure ?? transaction.error ?? new Error('存储事务已取消')); };
+    transaction.onabort = transaction.onerror = () => { connection.close(); reject(failure ?? transaction.error ?? new Error(t('library.secdb1a9'))); };
   });
 }
 export async function deleteProject(id, expectedRevision = null) {
@@ -94,14 +95,15 @@ export async function deleteProject(id, expectedRevision = null) {
       versions.put({ id, revision: crypto.randomUUID(), deleted: true });
     };
     transaction.oncomplete = () => { connection.close(); resolve(); };
-    transaction.onabort = transaction.onerror = () => { connection.close(); reject(failure ?? transaction.error ?? new Error('删除未完成')); };
+    transaction.onabort = transaction.onerror = () => { connection.close(); reject(failure ?? transaction.error ?? new Error(t('library.s7840cbe'))); };
   });
   publish(id, null, true);
 }
 export function projectSummary(project, thumbnail) {
   return { version: 2, id: project.id, storageRevision: project.storageRevision ?? null, name: project.chart.META.name ?? project.chartName,
       chartName: project.chartName, identifier: project.identifier ?? project.info?.Path ?? project.chart?.META?.id ?? '', source: project.source, imported: project.imported, bytes: project.bytes,
-      updated: project.updated ?? project.imported, group: project.group ?? project.info?.Group ?? '未分组',
+      updated: project.updated ?? project.imported, // Empty means "ungrouped"; the name is localized only when displayed.
+      group: project.group ?? project.info?.Group ?? '',
       pinned: Boolean(project.pinned), archived: Boolean(project.archived), level: project.chart.META.level ?? '', charter: project.chart.META.charter ?? '',
       thumbnail, composer: project.chart.META.composer ?? '', lines: project.chart.judgeLineList?.length ?? 0,
       notes: (project.chart.judgeLineList ?? []).reduce((sum, line) => sum + (line.notes?.length ?? 0), 0) };
@@ -135,9 +137,9 @@ export async function writeLibraryRecords(records, { guard } = {}) {
   return new Promise((resolve, reject) => {
     const transaction = connection.transaction(['preferences'], 'readwrite', { durability: 'strict' }), store = transaction.objectStore('preferences'); let failure;
     const write = () => { for (const record of records) store.put(record.value, record.key); };
-    if (guard) { const request = store.get(guard.key); request.onsuccess = () => { if (JSON.stringify(request.result ?? []) !== JSON.stringify(guard.value)) { failure = Error('工作区文件已被其他窗口修改，请重新读取'); transaction.abort(); } else write(); }; } else write();
+    if (guard) { const request = store.get(guard.key); request.onsuccess = () => { if (JSON.stringify(request.result ?? []) !== JSON.stringify(guard.value)) { failure = Error(t('library.s13653bb')); transaction.abort(); } else write(); }; } else write();
     transaction.oncomplete = () => { connection.close(); resolve(); };
-    transaction.onabort = transaction.onerror = () => { connection.close(); reject(failure ?? transaction.error ?? Error('文件写入失败')); };
+    transaction.onabort = transaction.onerror = () => { connection.close(); reject(failure ?? transaction.error ?? Error(t('library.sca77fc2'))); };
   });
 }
 export const readPreferences = () => readPreference('current');

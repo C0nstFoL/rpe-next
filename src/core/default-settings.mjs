@@ -69,5 +69,5 @@ export const DEFAULT_APPEARANCE = Object.freeze({
       "parameters": {}
     }
   },
-  "noteSkin": "default"
+  "noteSkin": "builtin-sea-of-dreams"
 });

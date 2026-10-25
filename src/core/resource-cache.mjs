@@ -1,3 +1,4 @@
+import { t } from '../i18n.mjs';
 export class ResourceCache {
   constructor({ maxEntries, maxBytes, dispose = () => {}, retain = () => false }) {
     this.maxEntries = maxEntries; this.maxBytes = maxBytes; this.dispose = dispose; this.retain = retain; this.items = new Map(); this.bytes = 0;
@@ -7,7 +8,7 @@ export class ResourceCache {
   peek(key) { return this.items.get(key)?.value; }
   get(key) { const entry = this.items.get(key); if (!entry) return; this.items.delete(key); this.items.set(key, entry); return entry.value; }
   set(key, value, bytes) {
-    if (!Number.isFinite(bytes) || bytes < 0) throw Error('缓存大小无效');
+    if (!Number.isFinite(bytes) || bytes < 0) throw Error(t('resource-cache.sf43b974'));
     const previous = this.items.get(key); if (previous && previous.value === value) { this.bytes += bytes - previous.bytes; this.items.delete(key); }
     else this.delete(key);
     this.items.set(key, { value, bytes }); this.bytes += previous && previous.value === value ? 0 : bytes; this.trim(); return value;

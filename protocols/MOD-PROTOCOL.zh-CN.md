@@ -51,7 +51,9 @@ example/
 }
 ```
 
-必填项为 `protocol/api/id/name/version/author/description/entry`。`author`、`description` 可为空。`id` 和设置键以小写字母开头，只含小写字母、数字、`-`，最长 64 字符。`version` 用 `1.0.0` 形式，可有 `-beta.1` 或 `+build` 后缀。`entry` 为包内 `.mjs` 或 `.js` ES 模块，必须存在。未知清单字段保留但不自动执行，可用 `x-` 前缀保存扩展元数据。
+必填项为 `protocol/api/id/name/version/author/description/entry`。`author`、`description` 可为空。`name`、`author`、`description`，以及设置的 `label`、`description` 和 `select` 选项文本，都可以写成语言映射（`{ "zh-CN": "…", "en-US": "…" }`），管理器按当前界面语言显示；匹配顺序为完整语言标签、同语种、`zh-CN`、映射首项。`id` 和设置键以小写字母开头，只含小写字母、数字、`-`，最长 64 字符。`version` 必须是字符串，用 `1.0.0` 形式，可有 `-beta.1` 或 `+build` 后缀，不接受语言映射。`entry` 为包内 `.mjs` 或 `.js` ES 模块，必须存在。未知清单字段保留但不自动执行，可用 `x-` 前缀保存扩展元数据。
+
+为兼容 API 1，`api.manifest` 中的名称、作者、说明及设置文本始终是按装载时界面语言解析后的字符串，模组可继续拼接或调用字符串方法。`api.manifestSource` 提供保留语言映射的原始清单副本；类型分别见 `ModManifest` 与 `ModManifestSource`。二者均不改写包内 `mod.json` 或导出内容。界面切换语言后重载模组以重新解析。持久化全局事件的来源名称、作者和版本仍为字符串，类型 ID 和设置键不随语言变化。
 
 `dependencies`、`conflicts` 为其他模组 ID 的数组，不允许包含自身。依赖先装载，缺失、循环及双方任何一方声明的冲突会阻止装载。禁用依赖也会禁用依赖它的模组。没有依赖关系时按用户启用顺序装载；自动启动按保存的顺序处理。不支持依赖版本范围，作者应在激活时自行检查功能或版本。
 
@@ -105,6 +107,7 @@ export function activate(api) {
 | API | 行为 |
 |---|---|
 | `version/id/manifest/editor/signal` | 接口版本、模组 ID、清单、编辑器对象、中止信号 |
+| `manifestSource` | 保留多语言文本映射的原始清单副本 |
 | `dispose(fn)` | 注册额外清理 |
 | `listen(target,type,fn,options)` | 托管任意 DOM/EventTarget 监听 |
 | `on(type,fn)` | 监听宿主事件；回调直接接收 detail |

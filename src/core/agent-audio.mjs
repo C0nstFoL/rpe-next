@@ -1,4 +1,5 @@
 import { checkAgentSignal } from './agent-commands.mjs';
+import { t } from '../i18n.mjs';
 
 const yieldFrame = () => new Promise(resolve => setTimeout(resolve, 0));
 const cache = new WeakMap();
@@ -29,8 +30,8 @@ function transform(real, imaginary, plan) {
 
 export async function analyzeAgentAudio(buffer, { startSeconds, endSeconds, sensitivity = 1.4, minGap = .08, focus = 'all', minConfidence = .35, signal } = {}) {
   checkAgentSignal(signal);
-  if (!buffer?.getChannelData || !(endSeconds > startSeconds) || startSeconds < 0 || endSeconds > buffer.duration + .001 || endSeconds - startSeconds > 180) throw Error('请提供音频范围内、最长 180 秒的分析区间');
-  if (!['all', 'percussion', 'low', 'melody'].includes(focus)) throw Error('采音频带无效');
+  if (!buffer?.getChannelData || !(endSeconds > startSeconds) || startSeconds < 0 || endSeconds > buffer.duration + .001 || endSeconds - startSeconds > 180) throw Error(t('agent-audio.s4b2fbb5'));
+  if (!['all', 'percussion', 'low', 'melody'].includes(focus)) throw Error(t('agent-audio.sc899767'));
   const key = JSON.stringify([startSeconds, endSeconds, sensitivity, minGap, focus, minConfidence]); let entries = cache.get(buffer);
   if (entries?.has(key)) return structuredClone(entries.get(key));
   const sampleRate = Math.min(22050, buffer.sampleRate), ratio = buffer.sampleRate / sampleRate, size = 1024, hop = Math.max(1, Math.round(sampleRate * .01));
@@ -104,7 +105,7 @@ export async function analyzeAgentAudio(buffer, { startSeconds, endSeconds, sens
   for (const candidate of bpms) { if (candidate.score > .01 && estimatedBpms.every(entry => Math.abs(entry.bpm - candidate.bpm) > 3)) estimatedBpms.push(candidate); if (estimatedBpms.length === 5) break; }
   checkAgentSignal(signal);
   const result = { peaks, estimatedBpms, sampleRate: buffer.sampleRate, startSeconds, endSeconds, focus, method: 'local-multiband-spectral-flux',
-    caution: '频谱起音候选不等于人工听辨或音高转写；分离声部也可能串音，请结合音乐层次、置信度和拍网格检查。', statistics: { frames: frames.length, candidates: candidates.length, selected: peaks.length, detectorVersion: 2 } };
+    caution: t('agent-audio.s6c19128'), statistics: { frames: frames.length, candidates: candidates.length, selected: peaks.length, detectorVersion: 2 } };
   if (!entries) { entries = new Map(); cache.set(buffer, entries); } entries.set(key, structuredClone(result)); if (entries.size > 4) entries.delete(entries.keys().next().value);
   return result;
 }

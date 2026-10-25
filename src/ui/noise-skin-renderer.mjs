@@ -1,4 +1,5 @@
 import { parseNoiseSkin, skinSize } from '../core/noise-skin.mjs';
+import { t } from '../i18n.mjs';
 
 const vertex = `#version 300 es
 in vec2 position; out highp vec2 uv;
@@ -52,7 +53,7 @@ export class NoiseSkinRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter === 'linear' ? gl.LINEAR : gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter === 'linear' ? gl.LINEAR : gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     const framebuffer = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
-    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) { gl.deleteTexture(texture); gl.deleteFramebuffer(framebuffer); throw new Error('设备不支持皮肤 Target 格式：' + format); }
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) { gl.deleteTexture(texture); gl.deleteFramebuffer(framebuffer); throw new Error(t('noise-skin-renderer.s97c0838') + format); }
     const target = { texture, framebuffer, width, height, format, size: [width, height], texelSize: [1 / width, 1 / height] }; this.clear(target); return target;
   }
   destroy(target) { if (!target) return; const gl = this.gl; gl.deleteTexture(target.texture); gl.deleteFramebuffer(target.framebuffer); if (target.stencil) gl.deleteRenderbuffer(target.stencil); }
@@ -99,7 +100,7 @@ export class NoiseSkinRenderer {
       cached.ready = Promise.all([...textures].map(async ([key, image]) => {
         const bitmap = await createImageBitmap(new Blob([files.get(image.path)]), { premultiplyAlpha: 'none', colorSpaceConversion: 'none', imageOrientation: 'flipY' });
         if (this.skins.get(root) !== cached || this.lost) { bitmap.close(); return; }
-        if (bitmap.width > this.maximum || bitmap.height > this.maximum) { bitmap.close(); throw new Error('图片尺寸超出设备范围：' + image.path); }
+        if (bitmap.width > this.maximum || bitmap.height > this.maximum) { bitmap.close(); throw new Error(t('noise-skin-renderer.sa4d193e') + image.path); }
         const gl = this.gl; const raw = this.texture(bitmap.width, bitmap.height); gl.bindTexture(gl.TEXTURE_2D, raw.texture);
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false); gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
         gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gl.RGBA,gl.UNSIGNED_BYTE,bitmap); bitmap.close();
@@ -129,14 +130,14 @@ export class NoiseSkinRenderer {
     for (const [name, spec] of Object.entries(channel.targets)) { const [w,h] = sizes.get(name); instance.targets.set(name, { spec, front: allocate(w,h,spec.format,spec.filter), back: allocate(w,h,spec.format,spec.filter) }); }
     instance.fullMask = allocate(width,height,'r8');
     const gl = this.gl; gl.bindFramebuffer(gl.FRAMEBUFFER,instance.fullMask.framebuffer); const stencil = gl.createRenderbuffer(); instance.fullMask.stencil = stencil; gl.bindRenderbuffer(gl.RENDERBUFFER,stencil); gl.renderbufferStorage(gl.RENDERBUFFER,gl.STENCIL_INDEX8,width,height); gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.STENCIL_ATTACHMENT,gl.RENDERBUFFER,stencil);
-    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE) throw new Error('设备不支持噪域几何计数缓冲');
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE) throw new Error(t('noise-skin-renderer.s9f767fb'));
     instance.mask = allocate(mw,mh,'r8');
     instance.history = new Map();
     instance.passes = channel.passes.map(pass => {
       const program = skin.programs.get(pass.shader);
       const inputs = Object.entries(pass.inputs).filter(([name]) => program.uniforms.has(name)).map(([name, input]) => ({ name, target: input === '$screen' ? null : instance.targets.get(input) }));
       const images = (skin.definition.textures.get(pass.shader) ?? []).filter(image => program.uniforms.has(image.name)).map(image => ({ name: image.name, target: skin.images.get(JSON.stringify(image)) }));
-      if (Number(program.uniforms.has('screenTexture')) + Number(program.uniforms.has('blockMask')) + inputs.length + images.length > this.maximumSamplers) throw new Error('皮肤采样器数量超出设备范围');
+      if (Number(program.uniforms.has('screenTexture')) + Number(program.uniforms.has('blockMask')) + inputs.length + images.length > this.maximumSamplers) throw new Error(t('noise-skin-renderer.sa303613'));
       return { program, target: instance.targets.get(pass.output), component: pass.component, inputs, images, constants: Object.entries(pass.constants), parameters: skin.definition.parameters.filter(parameter => program.uniforms.has(parameter.name)) };
     });
     this.instances.set(layer.id,instance); return instance;
@@ -165,7 +166,7 @@ export class NoiseSkinRenderer {
     try {
       const skin = this.skin(layer.skin,assets); if (skin.error) throw skin.error; if (skin.pending) return false;
       const ratio = context.canvas.width / canvasWidth; const width = Math.max(1,Math.round(viewport.width*ratio)); const height = Math.max(1,Math.round(viewport.height*ratio));
-      if (width > this.maximum || height > this.maximum) throw new Error('预览尺寸超出设备范围');
+      if (width > this.maximum || height > this.maximum) throw new Error(t('noise-skin-renderer.s995058d'));
       const gl = this.gl; gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE); gl.disable(gl.SCISSOR_TEST); gl.disable(gl.STENCIL_TEST); gl.disable(gl.SAMPLE_ALPHA_TO_COVERAGE); gl.colorMask(true,true,true,true);
       if (this.canvas.width !== width || this.canvas.height !== height) { this.canvas.width = width; this.canvas.height = height; }
       const instance = this.instance(layer,skin,width,height);
@@ -174,7 +175,7 @@ export class NoiseSkinRenderer {
       if (!instance.parameters || signature !== instance.signature) {
         instance.parameters = new Map(skin.definition.parameters.map(parameter => {
           const value = layer.parameters?.[parameter.name] ?? parameter.value; const values = Array.isArray(value) ? value : [value];
-          if (values.some(item => !Number.isFinite(item)) || values.length !== (parameter.type === 'float' ? 1 : Number(parameter.type.slice(3))) || parameter.name === 'touchReleaseDuration' && value < 0) throw new Error('皮肤参数无效：' + parameter.name);
+          if (values.some(item => !Number.isFinite(item)) || values.length !== (parameter.type === 'float' ? 1 : Number(parameter.type.slice(3))) || parameter.name === 'touchReleaseDuration' && value < 0) throw new Error(t('noise-skin-renderer.s9cf0d9a') + parameter.name);
           return [parameter.name, value];
         }));
       }
@@ -208,7 +209,7 @@ export class NoiseSkinRenderer {
       }
       this.blit(screen,null);
       context.save(); context.globalAlpha = 1; context.clearRect(viewport.left,viewport.top,viewport.width,viewport.height); context.drawImage(this.canvas,viewport.left,viewport.top,viewport.width,viewport.height); context.restore(); return true;
-    } catch (error) { const message = '噪域皮肤 '+layer.skin+'：'+error.message; if (!this.errors.has(message)) { this.errors.add(message); this.report?.(message); console.warn(message); } return false; }
+    } catch (error) { const message = t('noise-skin-renderer.s8875622')+layer.skin+'：'+error.message; if (!this.errors.has(message)) { this.errors.add(message); this.report?.(message); console.warn(message); } return false; }
   }
   snapshot(source) { const target = this.texture(source.width,source.height,source.format); this.blit(source,target); return target; }
 }

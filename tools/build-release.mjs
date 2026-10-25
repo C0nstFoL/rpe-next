@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { dirname, join, resolve, basename, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractReleaseZip, verifyReleaseSourceDirectory, verifyReleaseSourceZip } from './release-source.mjs';
+import { EDITOR_PACKAGE_SOURCES, SERVER_PACKAGE_SOURCES } from './package-sources.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const kind = process.argv.includes('--server') ? 'server' : 'editor';
@@ -16,13 +17,7 @@ const platform = process.platform, arch = process.arch;
 if (!['win32', 'darwin', 'linux'].includes(platform) || !['x64', 'arm64'].includes(arch)) throw Error('Release builds require Windows, macOS or Linux on x64/ARM64');
 const metadata = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
 const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-const tracked = ['desktop', 'src/core', 'src/application', 'src/platform', 'src/ui', 'assets', 'index.html', 'styles.css', 'LICENSE', 'NOTICE',
-  'protocols/EDITOR-SKIN-PROTOCOL.zh-CN.md', 'protocols/MOD-PROTOCOL.zh-CN.md', 'protocols/GLOBAL-EVENTS-PROTOCOL.zh-CN.md', 'protocols/AI-AGENT-PROTOCOL.zh-CN.md', 'protocols/AUDIO-SEPARATION.zh-CN.md', 'protocols/CHART-VERSION-CONTROL.zh-CN.md', 'schemas',
-  'tools/smoke-mods.mjs', 'tools/smoke-native.mjs', 'tools/smoke-asset-library.mjs', 'tools/smoke-settings-renderer.js', 'tools/smoke-saving.mjs', 'tools/smoke-agent.mjs', 'tools/smoke-agent-upgrade.mjs', 'tools/smoke-audio.mjs'];
-const serverFiles = ['collaboration-server/server.mjs', 'collaboration-server/asset-store.mjs', 'collaboration-server/manager.cjs',
-  'collaboration-server/diagnostics.cjs', 'collaboration-server/preload.cjs', 'collaboration-server/manager.html',
-  'collaboration-server/manager.css', 'collaboration-server/manager.js', 'collaboration-server/README.md', 'src/core', 'LICENSE', 'NOTICE'];
-const sourcePaths = kind === 'server' ? serverFiles : tracked;
+const sourcePaths = kind === 'server' ? SERVER_PACKAGE_SOURCES : EDITOR_PACKAGE_SOURCES;
 execFileSync('git', ['diff', '--exit-code', 'HEAD', '--', 'package.json', ...sourcePaths], { cwd: root, stdio: 'pipe' });
 const platformName = { win32: 'windows', darwin: 'macos', linux: 'linux' }[platform];
 const product = kind === 'server' ? 'RePhiEdit Collaboration Server' : 'RePhiEdit Next';

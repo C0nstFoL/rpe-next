@@ -2,6 +2,7 @@ import { createNote, createEvent, createLine } from '../core/chart.mjs';
 import { createNoiseArea, createNoiseEvent } from '../core/noise-areas.mjs';
 import { fromNumber, beatValue, parseBeat } from '../core/beat.mjs';
 import { easing } from '../core/easing.mjs';
+import { t } from '../i18n.mjs';
 
 const send = globalThis.postMessage.bind(globalThis);
 globalThis.onmessage = async event => {
@@ -16,9 +17,9 @@ globalThis.onmessage = async event => {
     url = URL.createObjectURL(new Blob(['export default async function(chart,api,input){"use strict";\n' + source + '\n}'], { type: 'text/javascript' }));
     const script = await import(url), result = await script.default(chart, api, input);
     const next = result?.chart ?? chart;
-    if (JSON.stringify(next).length > 128 * 1024 * 1024) throw Error('脚本结果超过 128 MiB，请分段处理');
+    if (JSON.stringify(next).length > 128 * 1024 * 1024) throw Error(t('agent-script-worker.s895ce54'));
     const output = result?.result ?? result ?? logs;
-    send({ token, ok: true, chart: next, origins: next.judgeLineList.map(line => origins.get(line) ?? null), result: JSON.stringify(output).length > 60000 ? { message: '脚本返回值过大；谱面变更已保留在计划中' } : output });
+    send({ token, ok: true, chart: next, origins: next.judgeLineList.map(line => origins.get(line) ?? null), result: JSON.stringify(output).length > 60000 ? { message: t('agent-script-worker.s08b8013') } : output });
   } catch (error) { send({ token, ok: false, error: error.message }); }
   finally { if (url) URL.revokeObjectURL(url); }
 };

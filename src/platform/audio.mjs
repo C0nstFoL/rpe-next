@@ -1,17 +1,18 @@
 import { mediaType } from './files.mjs';
 import { pcmWave } from './pcm-wave.mjs';
 import { ResourceCache } from '../core/resource-cache.mjs';
+import { t } from '../i18n.mjs';
 
 function loadMediaSource(media, url, name, signal) {
   return new Promise((resolve, reject) => {
-    const abort = () => finish(Object.assign(new Error('音源切换已取消'), { name: 'AbortError' }));
+    const abort = () => finish(Object.assign(new Error(t('audio.s27e0136')), { name: 'AbortError' }));
     const finish = error => {
       clearTimeout(timeout); signal?.removeEventListener('abort', abort); media.onloadedmetadata = null; media.onerror = null;
       if (error) reject(error); else resolve();
     };
-    const timeout = setTimeout(() => finish(new Error(`读取音乐 ${name} 超时，请检查文件或重新导入`)), 15000);
+    const timeout = setTimeout(() => finish(new Error(t('audio.s16ce4ff', { p0: name }))), 15000);
     media.onloadedmetadata = () => finish();
-    media.onerror = () => finish(new Error(`无法解码音乐 ${name}；请检查文件完整性或转为 WAV/FLAC/MP3/OGG`));
+    media.onerror = () => finish(new Error(t('audio.s2dd0ec8', { p0: name })));
     signal?.addEventListener('abort', abort, { once: true }); if (signal?.aborted) { abort(); return; }
     media.src = url;
   });
@@ -104,7 +105,7 @@ export class AudioTransport {
   }
   resetPlaybackBuffer({ clearCache = false } = {}) { this.overrideRevision++; if (this.playbackOverride) this.applyPlaybackOverride(null); if (clearCache) this.playbackCache.clear(); }
   async setPlaybackBuffer(buffer, { signal } = {}) {
-    if (signal?.aborted) throw Object.assign(new Error('音源切换已取消'), { name: 'AbortError' });
+    if (signal?.aborted) throw Object.assign(new Error(t('audio.s27e0136')), { name: 'AbortError' });
     if (!buffer || buffer === this.buffer) { this.resetPlaybackBuffer(); return; }
     if (buffer === this.playbackBuffer) return;
     const revision = ++this.overrideRevision, original = this.buffer, cached = this.playbackCache.get(buffer);
@@ -114,13 +115,13 @@ export class AudioTransport {
     const valid = () => revision === this.overrideRevision && original === this.buffer && !signal?.aborted;
     try {
       if (typeof Audio !== 'undefined') {
-        const wave = await pcmWave(buffer, () => !valid()); if (!wave || !valid()) throw Object.assign(new Error('音源切换已取消'), { name: 'AbortError' });
+        const wave = await pcmWave(buffer, () => !valid()); if (!wave || !valid()) throw Object.assign(new Error(t('audio.s27e0136')), { name: 'AbortError' });
         override.bytes = wave.size; override.media = new Audio(); override.media.preload = 'auto'; override.url = URL.createObjectURL(wave);
-        await loadMediaSource(override.media, override.url, '分析音源', signal);
+        await loadMediaSource(override.media, override.url, t('audio.s724a91c'), signal);
         override.media.playbackRate = this.rate; override.media.preservesPitch = this.preservePitch;
         override.source = this.ensureContext().createMediaElementSource(override.media); override.source.connect(this.gain);
       }
-      if (!valid()) throw Object.assign(new Error('音源切换已取消'), { name: 'AbortError' });
+      if (!valid()) throw Object.assign(new Error(t('audio.s27e0136')), { name: 'AbortError' });
       this.applyPlaybackOverride(override);
     } catch (error) { this.disposePlaybackOverride(override); throw error; }
   }
@@ -148,7 +149,7 @@ export class AudioTransport {
           if (error) reject(error); else resolve();
         };
         const seeked = () => { if (!media.seeking) finish(); };
-        const failed = () => finish(new Error('音乐定位失败，请重新载入音频'));
+        const failed = () => finish(new Error(t('audio.s09649b0')));
         start.cancel = () => finish();
         media.addEventListener('seeked', seeked); media.addEventListener('error', failed);
         seeked();
@@ -214,7 +215,7 @@ export class AudioTransport {
   }
 
   seek(seconds) {
-    if (!Number.isFinite(seconds)) throw new Error('非法播放位置');
+    if (!Number.isFinite(seconds)) throw new Error(t('audio.s8ad1694'));
     this.playRevision++;
     this.stopSource();
     this.position = Math.min(seconds, this.duration);
@@ -228,7 +229,7 @@ export class AudioTransport {
   }
 
   setRate(rate) {
-    if (!Number.isFinite(rate) || rate <= 0) throw new Error('倍速必须大于零');
+    if (!Number.isFinite(rate) || rate <= 0) throw new Error(t('audio.sde2da75'));
     const position = this.time;
     const wasMedia = this.usesMedia;
     this.rate = rate;
@@ -241,7 +242,7 @@ export class AudioTransport {
   }
 
   setVolume(volume) {
-    if (!Number.isFinite(volume)) throw new Error('音量必须为有限数字');
+    if (!Number.isFinite(volume)) throw new Error(t('audio.s9730e08'));
     this.volume = Math.max(0, Math.min(1, volume));
     if (this.gain) this.gain.gain.value = this.volume;
   }

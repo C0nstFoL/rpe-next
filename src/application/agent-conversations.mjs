@@ -1,3 +1,4 @@
+import { t } from '../i18n.mjs';
 export const DEFAULT_AGENT_CONTEXT = Object.freeze({ mode: 'all', turns: 6 });
 
 export function conversationMessages(conversation) {
@@ -17,7 +18,7 @@ export class AgentConversations {
     for (const record of snapshot?.records ?? []) {
       if (typeof record?.id !== 'string' || !record.id || !Array.isArray(record.turns)) continue;
       const restored = structuredClone(record); restored.context ??= { ...DEFAULT_AGENT_CONTEXT }; restored.draft ??= '';
-      for (const turn of restored.turns) if (['running', 'compacting'].includes(turn.status)) { turn.status = 'stopped'; turn.error ??= '上次任务未完成；已完成的操作保留，可继续对话。'; }
+      for (const turn of restored.turns) if (['running', 'compacting'].includes(turn.status)) { turn.status = 'stopped'; turn.error ??= t('agent-conversations.s1c12b1d'); }
       for (const turn of restored.turns) if (turn.status === 'queued') turn.paused = true;
       this.records.set(restored.id, restored);
     }
@@ -25,15 +26,15 @@ export class AgentConversations {
   }
   get current() { return this.records.get(this.selected); }
   create(title = '') {
-    const record = { id: crypto.randomUUID(), title: title || '新对话', context: { ...DEFAULT_AGENT_CONTEXT }, turns: [], draft: '', createdAt: Date.now() };
+    const record = { id: crypto.randomUUID(), title: title || t('agent-conversations.s1b7abf9'), context: { ...DEFAULT_AGENT_CONTEXT }, turns: [], draft: '', createdAt: Date.now() };
     this.records.set(record.id, record); this.selected = record.id; return record;
   }
-  select(id) { if (!this.records.has(id)) throw Error('对话不存在'); this.selected = id; return this.current; }
-  rename(id, title) { const record = this.records.get(id); if (!record || !title.trim()) throw Error('对话名称不能为空'); record.title = title.trim().slice(0, 100); }
+  select(id) { if (!this.records.has(id)) throw Error(t('agent-conversations.saea62e7')); this.selected = id; return this.current; }
+  rename(id, title) { const record = this.records.get(id); if (!record || !title.trim()) throw Error(t('agent-conversations.s442da6f')); record.title = title.trim().slice(0, 100); }
   remove(id) { this.records.delete(id); if (!this.records.size) return this.create(); if (this.selected === id) this.selected = this.records.keys().next().value; return this.current; }
   branch(id, turnIndex) {
-    const source = this.records.get(id); if (!source || !source.turns[turnIndex]) throw Error('历史轮次不存在');
-    const record = this.create(source.title + ' · 重发'); record.context = { ...source.context };
+    const source = this.records.get(id); if (!source || !source.turns[turnIndex]) throw Error(t('agent-conversations.sa4cc469'));
+    const record = this.create(source.title + t('agent-conversations.s2e72d6b')); record.context = { ...source.context };
     record.turns = structuredClone(source.turns.slice(0, turnIndex)); return record;
   }
   snapshot({ turns = true, memory = true } = {}) {
@@ -44,7 +45,7 @@ export class AgentConversations {
     })) };
   }
   setContext(id, mode, turns = 6) {
-    if (!['all', 'last', 'none'].includes(mode) || !Number.isSafeInteger(turns) || turns < 1 || turns > 10000) throw Error('上下文范围无效');
+    if (!['all', 'last', 'none'].includes(mode) || !Number.isSafeInteger(turns) || turns < 1 || turns > 10000) throw Error(t('agent-conversations.sde81c91'));
     this.records.get(id).context = { mode, turns };
   }
 }

@@ -1,18 +1,19 @@
 import { checkAgentSignal } from '../core/agent-commands.mjs';
+import { t } from '../i18n.mjs';
 
 export class AgentProviders extends EventTarget {
   constructor() { super(); this.entries = new Map(); }
   register(provider) {
-    if (!/^[a-z][a-z0-9-]+$/.test(provider.id) || this.entries.has(provider.id) || typeof provider.complete !== 'function') throw Error('Provider 无效或重复');
+    if (!/^[a-z][a-z0-9-]+$/.test(provider.id) || this.entries.has(provider.id) || typeof provider.complete !== 'function') throw Error(t('agent-provider.s64b4a63'));
     this.entries.set(provider.id, provider); this.dispatchEvent(new Event('change'));
     return () => { if (this.entries.get(provider.id) === provider) { this.entries.delete(provider.id); this.dispatchEvent(new Event('change')); } };
   }
-  get(id) { const provider = this.entries.get(id); if (!provider) throw Error('模型服务未注册'); return provider; }
+  get(id) { const provider = this.entries.get(id); if (!provider) throw Error(t('agent-provider.s0c2e384')); return provider; }
 }
 
 export async function agentHttp(path, key, body, { signal, onChunk, request } = {}) {
   checkAgentSignal(signal);
-  if (!key?.trim()) throw Error('请先在 AI 配置中填写 API Key');
+  if (!key?.trim()) throw Error(t('agent-provider.s4c02bba'));
   if (globalThis.rpenAgentNetwork && !request) {
     const id = crypto.randomUUID(), bridge = globalThis.rpenAgentNetwork;
     let chunkError;
@@ -26,17 +27,17 @@ export async function agentHttp(path, key, body, { signal, onChunk, request } = 
   const abort = () => controller.abort(); signal?.addEventListener('abort', abort, { once: true });
   let response;
   try { response = await request('https://api.deepseek.com' + path, { method: path === '/models' ? 'GET' : 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, ...(path === '/models' ? {} : { body: JSON.stringify(body) }), signal: controller.signal }); }
-  catch (error) { clearTimeout(timeout); signal?.removeEventListener('abort', abort); if (signal?.aborted) throw error; throw Error('无法连接 DeepSeek：请检查网络、跨域限制或代理设置。'); }
+  catch (error) { clearTimeout(timeout); signal?.removeEventListener('abort', abort); if (signal?.aborted) throw error; throw Error(t('agent-provider.sad3a12f')); }
   if (!response.ok) {
     clearTimeout(timeout); signal?.removeEventListener('abort', abort);
-    const messages = { 400: '请求参数或上下文无效', 401: 'API Key 无效', 402: 'API 余额不足', 403: '请求被拒绝', 429: '请求过于频繁，请稍后再试', 503: '服务繁忙' };
+    const messages = { 400: t('agent-provider.s6edbadf'), 401: t('agent-provider.sf3a6b8a'), 402: t('agent-provider.sc1ab622'), 403: t('agent-provider.sc96b373'), 429: t('agent-provider.s14c9516'), 503: t('agent-provider.s4cf3d3f') };
     let responseBody = ''; try { responseBody = (await response.text()).replaceAll(key, '[已隐藏]'); } catch {}
     controller.abort();
-    throw Object.assign(Error(`DeepSeek ${response.status}：${messages[response.status] ?? '服务请求失败'}`), { status: response.status, responseBody });
+    throw Object.assign(Error(t('agent-provider.s9374470', { p0: response.status, p1: messages[response.status] ?? t('agent-provider.s2b93754') })), { status: response.status, responseBody });
   }
   const reader = response.body.getReader(); const decoder = new TextDecoder(); let size = 0, contents = '';
   try {
-    for (;;) { const { done, value } = await reader.read(); if (done) break; size += value.byteLength; if (size > 16 * 1024 * 1024) throw Error('模型响应过大'); const chunk = decoder.decode(value, { stream: true }); if (onChunk) onChunk(chunk); else contents += chunk; }
+    for (;;) { const { done, value } = await reader.read(); if (done) break; size += value.byteLength; if (size > 16 * 1024 * 1024) throw Error(t('agent-provider.s4bd8619')); const chunk = decoder.decode(value, { stream: true }); if (onChunk) onChunk(chunk); else contents += chunk; }
     const rest = decoder.decode(); if (onChunk) onChunk(rest); else return JSON.parse(contents + rest);
   } finally { reader.releaseLock(); clearTimeout(timeout); signal?.removeEventListener('abort', abort); controller.abort(); }
 }
@@ -79,7 +80,7 @@ export function createDeepSeekProvider(request) {
         for (const line of lines) {
           if (!line.startsWith('data:')) continue;
           const data = line.slice(5).trim(); if (!data) continue; if (data === '[DONE]') { receivedDone = true; continue; }
-          const response = JSON.parse(data); if (response.error) throw Error('模型响应包含错误');
+          const response = JSON.parse(data); if (response.error) throw Error(t('agent-provider.sd4715d7'));
           if (response.usage) usage = response.usage;
           if (response.model) model = response.model;
           const choice = response.choices?.[0]; if (!choice) continue;
@@ -96,10 +97,10 @@ export function createDeepSeekProvider(request) {
         }
       } }); } catch (error) { onTrace?.({ response: { status: error.status, body: raw || error.responseBody || '', interrupted: Boolean(signal?.aborted) } }); throw error; }
       onTrace?.({ response: { status: 200, body: raw, format: 'text/event-stream' } });
-      if (!receivedDone || !finish) throw Error('模型响应中断；本轮未执行任何新命令，可重试。');
-      if (finish === 'length') throw Error('模型输出达到长度上限；请缩小任务或调高输出上限后重试');
+      if (!receivedDone || !finish) throw Error(t('agent-provider.sda51075'));
+      if (finish === 'length') throw Error(t('agent-provider.sa887565'));
       const toolCalls = [...calls.values()];
-      if (toolCalls.some(entry => !entry.id || !entry.function.name)) throw Error('模型工具调用不完整');
+      if (toolCalls.some(entry => !entry.id || !entry.function.name)) throw Error(t('agent-provider.sfc19d6a'));
       return { role: 'assistant', content: content || null, ...(reasoning ? { reasoning_content: reasoning } : {}), ...(toolCalls.length ? { tool_calls: toolCalls } : {}), usage, model };
     },
     async search(config, query, signal) { return call('/v1/tools/search', config, { query, count: 5, need_content: false }, { signal }); },

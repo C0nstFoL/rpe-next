@@ -3,6 +3,7 @@ import { mixAudioSources } from '../platform/audio-mix.mjs';
 import { STEM_NAMES, SEPARATION_MODELS, audioSourceColor, sourceAudioRange } from '../core/audio-sources.mjs';
 import { checkAgentSignal, agentAbort } from '../core/agent-commands.mjs';
 import { ResourceCache } from '../core/resource-cache.mjs';
+import { t } from '../i18n.mjs';
 
 export class AudioSources extends EventTarget {
   constructor(getAudio, { separator = new LocalAudioSeparator(), mixCacheBytes = 192 * 1024 ** 2, mixCacheEntries = 4 } = {}) {
@@ -20,7 +21,7 @@ export class AudioSources extends EventTarget {
   list() { this.sync(); const selected = this.pendingSelection ?? this.selection; return [...this.entries.values()].map(({ id, name, kind, model, buffer, duration, color }) => ({ id, name, kind, model, color, offsetSeconds: 0, duration: buffer?.duration ?? duration, selected: selected.has(id) })); }
   entry(id = this.selected) {
     this.sync(); if (id === 'selection' && this.mixEntry) return this.mixEntry; if (this.entries.has(id)) return this.entries.get(id);
-    const matches = [...this.entries.values()].filter(entry => entry.stem === id || entry.name === id); if (matches.length !== 1) throw Error('分析音源不存在或重名，请先查询声部列表'); return matches[0];
+    const matches = [...this.entries.values()].filter(entry => entry.stem === id || entry.name === id); if (matches.length !== 1) throw Error(t('audio-sources.sffa2983')); return matches[0];
   }
   isCurrent(entry) { if (entry?.originalEntry) return this.isCurrent(entry.originalEntry); return entry?.members ? entry.members.every(member => this.entries.get(member.id) === member) && entry.buffer === this.mixEntry?.buffer : this.entries.get(entry?.id) === entry; }
   async resolve(id = this.selected, signal) {
@@ -29,9 +30,9 @@ export class AudioSources extends EventTarget {
     if (!entry.buffer && entry.result) {
       if (!entry.loading) entry.loading = (async () => { const bytes = await this.separator.bytes(entry.result, entry.stem); return this.getAudio().ensureContext().decodeAudioData(bytes.buffer); })().finally(() => { entry.loading = null; });
       const buffer = await entry.loading; checkAgentSignal(signal);
-      if (original !== this.original || this.entries.get(entry.id) !== entry) throw Error('原音乐或声部已改变，旧分析音源已失效'); entry.buffer = buffer;
+      if (original !== this.original || this.entries.get(entry.id) !== entry) throw Error(t('audio-sources.sda4e35e')); entry.buffer = buffer;
     }
-    if (!entry.buffer) throw Error('当前音频尚未解码'); return entry;
+    if (!entry.buffer) throw Error(t('audio-sources.s10cfdf7')); return entry;
   }
   async resolveSelection(signal) {
     this.sync(); checkAgentSignal(signal); if (this.mixEntry && this.mixEntry.ids.join('\0') === this.selectedIds.join('\0')) return this.mixEntry;
@@ -45,7 +46,7 @@ export class AudioSources extends EventTarget {
   }
   async select(ids) {
     this.sync(); const requested = [...new Set((Array.isArray(ids) ? ids : [ids]).map(id => this.entry(id).id))];
-    if (!requested.length) throw Error('请至少选择一个分析音源'); if (requested.includes('selection')) throw Error('请选择实际声部');
+    if (!requested.length) throw Error(t('audio-sources.s6b701a3')); if (requested.includes('selection')) throw Error(t('audio-sources.sf133147'));
     this.selectionController?.abort(); const controller = this.selectionController = new AbortController(), serial = ++this.selectionSerial, original = this.original;
     this.pendingSelection = new Set(requested); this.selecting = true; this.changed();
     try {
@@ -74,29 +75,29 @@ export class AudioSources extends EventTarget {
   }
   invalidateMixes(ids) { for (const key of [...this.mixCache.keys()]) if (this.mixCache.peek(key).members.some(member => ids.has(member.id))) this.mixCache.delete(key); }
   async separate(options = {}, signal) {
-    this.sync(); if (!this.original) throw Error('请先载入可解码的音乐'); if (this.busy) throw Error('已有声部分离任务');
-    const model = options.model ?? 'htdemucs'; if (!SEPARATION_MODELS.some(entry => entry.id === model)) throw Error('分离模型无效');
+    this.sync(); if (!this.original) throw Error(t('audio-sources.s510310b')); if (this.busy) throw Error(t('audio-sources.sbf382b3'));
+    const model = options.model ?? 'htdemucs'; if (!SEPARATION_MODELS.some(entry => entry.id === model)) throw Error(t('audio-sources.s785d1e0'));
     const controller = this.controller = new AbortController(), cancel = () => controller.abort(); signal?.addEventListener('abort', cancel, { once: true }); if (signal?.aborted) cancel();
-    const original = this.original; this.busy = true; this.progress = { message: '准备声部分离…' }; this.changed();
+    const original = this.original; this.busy = true; this.progress = { message: t('audio-sources.s16dcb96') }; this.changed();
     try {
       const result = await this.separator.separate(original, options, controller.signal, progress => { this.progress = progress; this.dispatchEvent(new Event('progress')); });
-      if (original !== this.original || this.getAudio().buffer !== original) throw Error('原音乐已变化，分离结果未应用');
+      if (original !== this.original || this.getAudio().buffer !== original) throw Error(t('audio-sources.sad5759d'));
       let refresh = false;
       this.invalidateMixes(new Set(result.sources.map(source => model + '/' + source.id)));
       for (const source of result.sources) {
         const id = model + '/' + source.id; refresh ||= this.selection.has(id);
         const color = this.entries.get(id)?.color ?? audioSourceColor(this.colorSerial++);
-        this.entries.set(id, { id, stem: source.id, name: `${STEM_NAMES[source.id] ?? source.id} · ${model === 'htdemucs_6s' ? '六声部' : '四声部'}`, kind: 'separated', model, color, offsetSeconds: 0, duration: source.frames / source.sampleRate, buffer: null, result });
+        this.entries.set(id, { id, stem: source.id, name: t('audio-sources.s282e37a', { p0: STEM_NAMES[source.id] ?? source.id, p1: model === 'htdemucs_6s' ? t('audio-sources.sd1d87ef') : t('audio-sources.se977b25') }), kind: 'separated', model, color, offsetSeconds: 0, duration: source.frames / source.sampleRate, buffer: null, result });
       }
       this.revision++; if (refresh) await this.select(this.selectedIds);
       return { model, sources: this.list().filter(entry => entry.model === model), cacheHit: result.cacheHit === true };
     } finally { signal?.removeEventListener('abort', cancel); if (this.controller === controller) { this.busy = false; this.progress = null; this.controller = null; this.changed(); } }
   }
   async import(bytes, name) {
-    this.sync(); if (!this.original) throw Error('请先载入原音乐');
-    if (bytes.byteLength > 512 * 1024 ** 2 || this.entries.size >= 33) throw Error('单个导入声部不能超过512MiB，最多保留32个分析音源');
+    this.sync(); if (!this.original) throw Error(t('audio-sources.s2a329d5'));
+    if (bytes.byteLength > 512 * 1024 ** 2 || this.entries.size >= 33) throw Error(t('audio-sources.se25d846'));
     const original = this.original, buffer = await this.getAudio().ensureContext().decodeAudioData(bytes instanceof ArrayBuffer ? bytes.slice(0) : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-    if (original !== this.original) throw Error('原音乐已变化，声部未导入');
+    if (original !== this.original) throw Error(t('audio-sources.sc28dea8'));
     const id = 'imported/' + ++this.serial; this.entries.set(id, { id, name, kind: 'imported', buffer, color: audioSourceColor(this.colorSerial++), offsetSeconds: 0 }); this.revision++; this.changed(); return id;
   }
   async remove(id) {

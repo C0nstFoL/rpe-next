@@ -1,10 +1,11 @@
-export const ONSET_DETECTORS = Object.freeze([{ id: 'mapper', name: 'Mapperatorinator · 节奏草稿' }, { id: 'ddc', name: 'DDC · 学习型起音' }, { id: 'flux', name: '频谱起音 · 原算法' }]);
+import { t } from '../i18n.mjs';
+export const ONSET_DETECTORS = Object.freeze([{ id: 'mapper', name: t('audio-onsets.sb1c5f10') }, { id: 'ddc', name: t('audio-onsets.secb8fe1') }, { id: 'flux', name: t('audio-onsets.sc5fc9c5') }]);
 
 export function selectOnsetPeaks({ salience, frameRate, startSeconds: origin = 0 }, { startSeconds, endSeconds, minConfidence = .15, minGap = .08 } = {}) {
-  if (!salience?.length || !Number.isFinite(frameRate) || frameRate <= 0 || !Number.isFinite(origin) || !Number.isFinite(startSeconds) || !(endSeconds > startSeconds) || !Number.isFinite(minConfidence) || minConfidence < 0 || minConfidence > 1 || !Number.isFinite(minGap) || minGap < .02 || minGap > 2) throw Error('起音候选筛选参数无效');
+  if (!salience?.length || !Number.isFinite(frameRate) || frameRate <= 0 || !Number.isFinite(origin) || !Number.isFinite(startSeconds) || !(endSeconds > startSeconds) || !Number.isFinite(minConfidence) || minConfidence < 0 || minConfidence > 1 || !Number.isFinite(minGap) || minGap < .02 || minGap > 2) throw Error(t('audio-onsets.s2712f36'));
   const smooth = new Float32Array(salience.length), weights = [.08, .54, 1, .54, .08], candidates = [];
   for (let index = 0; index < salience.length; index++) {
-    if (!Number.isFinite(salience[index]) || salience[index] < 0 || salience[index] > 1) throw Error('起音分数无效');
+    if (!Number.isFinite(salience[index]) || salience[index] < 0 || salience[index] > 1) throw Error(t('audio-onsets.sadc67cf'));
     for (let offset = -2; offset <= 2; offset++) smooth[index] += (salience[index + offset] ?? 0) * weights[offset + 2] / 2.24;
   }
   for (let index = 0; index < salience.length; index++) {

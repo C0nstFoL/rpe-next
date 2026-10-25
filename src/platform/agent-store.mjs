@@ -1,10 +1,11 @@
 import { readLibraryRecord, writeLibraryRecord } from './library.mjs';
 import { AgentConversations } from '../application/agent-conversations.mjs';
+import { t } from '../i18n.mjs';
 const workspaceWrites = new Map();
 
 export class AgentConversationRepository {
   constructor(workspace, { read = readLibraryRecord, write = writeLibraryRecord } = {}) {
-    if (typeof workspace !== 'string' || !workspace || workspace.length > 256) throw Error('AI 谱面标识无效');
+    if (typeof workspace !== 'string' || !workspace || workspace.length > 256) throw Error(t('agent-store.sa5d6199'));
     this.prefix = 'agent-v2:' + workspace + ':'; this.read = read; this.write = write; this.pending = Promise.resolve();
   }
   async load() {

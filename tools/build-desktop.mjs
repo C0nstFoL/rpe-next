@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
+import { EDITOR_PACKAGE_SOURCES } from './package-sources.mjs';
 
 if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('当前打包脚本需要在 Windows x64 上运行。');
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -15,7 +16,7 @@ await mkdir(output, { recursive: true });
 await cp(runtime, output, { recursive: true, filter: path => !path.endsWith('default_app.asar') });
 await rename(join(output, 'electron.exe'), join(output, 'RePhiEdit-Next.exe'));
 const application = join(output, 'resources', 'app');
-for (const name of ['desktop', 'src/core', 'src/application', 'src/platform', 'src/ui', 'assets', 'index.html', 'styles.css', 'LICENSE', 'NOTICE', 'protocols/EDITOR-SKIN-PROTOCOL.zh-CN.md', 'protocols/MOD-PROTOCOL.zh-CN.md', 'protocols/GLOBAL-EVENTS-PROTOCOL.zh-CN.md', 'protocols/AI-AGENT-PROTOCOL.zh-CN.md', 'protocols/AUDIO-SEPARATION.zh-CN.md', 'protocols/CHART-VERSION-CONTROL.zh-CN.md', 'schemas', 'tools/smoke-mods.mjs', 'tools/smoke-native.mjs', 'tools/smoke-asset-library.mjs', 'tools/smoke-settings-renderer.js', 'tools/smoke-saving.mjs', 'tools/smoke-agent.mjs', 'tools/smoke-agent-upgrade.mjs', 'tools/smoke-audio.mjs']) {
+for (const name of EDITOR_PACKAGE_SOURCES) {
   await mkdir(dirname(join(application, name)), { recursive: true });
   await cp(join(root, name), join(application, name), { recursive: true });
 }
