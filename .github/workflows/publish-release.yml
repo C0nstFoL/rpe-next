@@ -53,6 +53,13 @@ jobs:
           fi
       - name: Verify all packages and generate checksums
         run: node tools/verify-release-assets.mjs release-assets "$SOURCE_COMMIT"
+      - name: Create and verify release tag
+        run: |
+          tag_count="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE_TAG" --jq "map(select(.ref == \"refs/tags/$RELEASE_TAG\")) | length")"
+          if [ "$tag_count" = 0 ]; then
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$RELEASE_TAG" -f sha="$SOURCE_COMMIT"
+          fi
+          test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)" = "$SOURCE_COMMIT"
       - name: Create draft, upload and publish
         run: |
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft > existing-release.json; then
