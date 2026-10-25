@@ -4,6 +4,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { builtinNoteSkins, updateNoteSkin, exportNoteSkin } from '../src/platform/note-skins.mjs';
 import { parseNoteSkin, NOTE_SKIN_IMAGES, NOTE_SKIN_SOUNDS } from '../src/core/note-skin.mjs';
 import { readZip } from '../src/platform/archive.mjs';
+import { DEFAULT_APPEARANCE } from '../src/core/default-settings.mjs';
 
 async function loadBuiltins(context) {
   context.mock.method(globalThis, 'fetch', async url => new Response(await readFile(new URL(url))));
@@ -14,6 +15,7 @@ test('梦之海内置音符皮肤保留包内作者、图片、打击音效与�
   const records = await loadBuiltins(context);
   const record = records.find(record => record.id === 'builtin-sea-of-dreams');
   assert.ok(record); assert.equal(record.builtin, true); assert.equal(record.originalFiles, record.files);
+  assert.equal(record.id, DEFAULT_APPEARANCE.noteSkin);
   assert.equal(record.info.name, 'Sea of Dreams - Neo'); assert.equal(record.info.author, '-虹之梦-');
   for (const name of [...NOTE_SKIN_IMAGES, ...Object.values(NOTE_SKIN_SOUNDS), 'BY虹之梦.png', 'ending.mp3']) assert.ok(record.files.has(name), name);
   assert.deepEqual(record.info.hitFx, [7, 10]); assert.equal(record.info.hitFxDuration, 0.65); assert.equal(record.info.hitFxScale, 1.35);

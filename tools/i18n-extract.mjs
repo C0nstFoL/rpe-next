@@ -6,6 +6,7 @@
 // Template literals: every `${…}` becomes `{pN}` and the call receives
 // `{ pN: expr }`, which lets translators reorder words freely.
 import { createHash } from 'node:crypto';
+import { parseExpressionAt } from '../src/core/vendor/acorn.mjs';
 
 export const CJK = /[\u4e00-\u9fff]/;
 
@@ -23,37 +24,15 @@ const DATA_SHAPE = /^[#[]|\[[^\]]*="|\.(?:json|mjs|js|png|txt|pez|zip|wav|ogg)$/
 const MEMBER_BEFORE = /(?:\?\.|\.)\s*$/;
 const KEYWORD_BEFORE = /\b(?:import|from|export|case)\s*$/;
 
-function interpolationGroups(body) {
-  const groups = [];
-  let index = 0;
-  while (index < body.length) {
-    const start = body.indexOf('${', index);
-    if (start < 0) break;
-    let depth = 1; let cursor = start + 2;
-    while (cursor < body.length && depth > 0) {
-      if (body[cursor] === '{') depth++;
-      else if (body[cursor] === '}') depth--;
-      cursor++;
+function leadingLiteral(node, start) {
+  if (!node || typeof node !== 'object' || node.start !== start) return null;
+  if (['Literal', 'TemplateLiteral'].includes(node.type)) return node;
+  for (const value of Object.values(node)) {
+    for (const child of Array.isArray(value) ? value : [value]) {
+      const found = leadingLiteral(child, start); if (found) return found;
     }
-    groups.push({ start, end: cursor, expression: body.slice(start + 2, cursor - 1) });
-    index = cursor;
   }
-  return groups;
-}
-
-function messageFromTemplate(body) {
-  const groups = interpolationGroups(body);
-  let template = '';
-  let cursor = 0;
-  const parameters = [];
-  for (const group of groups) {
-    template += body.slice(cursor, group.start);
-    template += `{p${parameters.length}}`;
-    parameters.push(group.expression.trim());
-    cursor = group.end;
-  }
-  template += body.slice(cursor);
-  return { template, parameters };
+  return null;
 }
 
 // Walks the module, skipping comments, and rewrites CJK string literals.
@@ -89,49 +68,35 @@ export function extractSource(file, text) {
     }
     if (character !== "'" && character !== '"' && character !== '`') { out += character; index++; continue; }
     const quote = character;
-    let end = index + 1;
-    let body = '';
-    let closed = false;
-    while (end < text.length) {
-      const current = text[end];
-      if (current === '\\') { body += current + (text[end + 1] ?? ''); end += 2; continue; }
-      if (current === quote) { closed = true; break; }
-      if (quote !== '`' && current === '\n') break;
-      if (quote === '`' && current === '$' && text[end + 1] === '{') {
-        let depth = 1; let cursor = end + 2;
-        while (cursor < text.length && depth > 0) {
-          if (text[cursor] === '{') depth++;
-          else if (text[cursor] === '}') depth--;
-          cursor++;
-        }
-        body += text.slice(end, cursor); end = cursor; continue;
-      }
-      body += current; end++;
-    }
-    const literal = text.slice(index, end + 1);
-    if (!closed || !CJK.test(body)) { out += literal; index = end + 1; continue; }
+    let parsed;
+    try { parsed = leadingLiteral(parseExpressionAt(text, index, { ecmaVersion: 'latest' }), index); }
+    catch { out += character; index++; continue; }
+    if (!parsed) { out += character; index++; continue; }
+    const end = parsed.end, literal = text.slice(index, end), body = literal.slice(1, -1);
+    if (!CJK.test(parsed.type === 'Literal' ? parsed.value : body)) { out += literal; index = end; continue; }
     const before = out.replace(/\s+$/, '');
-    const nextCharacter = text.slice(end + 1).match(/^\s*(.)/)?.[1];
+    const nextCharacter = text.slice(end).match(/^\s*(.)/)?.[1];
     const isObjectKey = nextCharacter === ':' && /([{,]\s*$)|(^\s*$)/.test(before);
-    if (isObjectKey || MEMBER_BEFORE.test(before) || KEYWORD_BEFORE.test(before)) { out += literal; index = end + 1; continue; }
-    if (DATA_LITERALS.has(body) || DATA_SHAPE.test(body)) { out += literal; index = end + 1; continue; }
+    if (isObjectKey || MEMBER_BEFORE.test(before) || KEYWORD_BEFORE.test(before)) { out += literal; index = end; continue; }
+    if (DATA_LITERALS.has(body) || DATA_SHAPE.test(body)) { out += literal; index = end; continue; }
     if (quote === '`') {
-      const { template, parameters } = messageFromTemplate(body);
-      const key = keyFor(file, body);
-      pairs.push({ key, value: template });
-      const rewritten = parameters.map((expression, position) => {
-        const nested = extractSource(file, expression);
+      const rewritten = parsed.expressions.map(expression => {
+        const nested = extractSource(file, text.slice(expression.start, expression.end));
         for (const pair of nested.pairs) if (!pairs.some(existing => existing.key === pair.key)) pairs.push(pair);
-        return `p${position}: ${nested.out}`;
+        return nested.out;
       });
-      out += rewritten.length ? `t('${key}', { ${rewritten.join(', ')} })` : `t('${key}')`;
-      index = end + 1; continue;
+      if (parsed.quasis.some(quasi => CJK.test(quasi.value.cooked ?? quasi.value.raw))) {
+        const template = parsed.quasis.map((quasi, position) => (quasi.value.cooked ?? quasi.value.raw) + (position < rewritten.length ? `{p${position}}` : '')).join('');
+        const key = keyFor(file, body); pairs.push({ key, value: template });
+        out += rewritten.length ? `t('${key}', { ${rewritten.map((expression, position) => `p${position}: ${expression}`).join(', ')} })` : `t('${key}')`;
+      } else out += '`' + parsed.quasis.map((quasi, position) => quasi.value.raw + (position < rewritten.length ? '${' + rewritten[position] + '}' : '')).join('') + '`';
+      index = end; continue;
     }
-    const value = body.replace(/\\(['"\\`])/g, '$1').replace(/\\(.)/g, '\\$1');
+    const value = parsed.value;
     const key = keyFor(file, value);
     pairs.push({ key, value });
     out += `t('${key}')`;
-    index = end + 1;
+    index = end;
   }
   return { out, pairs };
 }

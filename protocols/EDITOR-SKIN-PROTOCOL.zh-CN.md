@@ -180,6 +180,7 @@ tokens 是初始默认值，不是只能读取的常量。可在 `@root` 状态/
 | `footer` / `status` | `body > footer` / `#status` |
 | `notifications` | `#notifications` |
 | `dialog` / `settings` / `settings-body` | `#modal` / `#settings-modal` / `.settings-body` |
+| `language-settings` / `language-select` | `#language-settings` / `#ui-language`，语言分类与选择控件 |
 | `theme-settings` | `#editor-skin-settings` |
 | `context-menu` | `.timeline-context-menu` |
 | `line-overview` | `.line-switcher`，Ctrl+滚轮线缩略图 |
@@ -413,7 +414,9 @@ hide 为选择器字符串数组，最多 300 项，默认空。支持与 styles
 }
 ```
 
-最多 300 项。每项需要 selector，其他字段可选，内容为最多 1000 字符的纯文本，允许空字符串。每个字段也可写成语言映射（`{ "zh-CN": "…", "en-US": "…" }`），运行时按当前界面语言取值，缺失的语言回退到 `zh-CN`。text 替换第一个非空的**直接文本节点**，保留 img、kbd、input 等子节点；不会用 innerHTML，不解释标签。没有直接文字节点时不制造整段内容，可改为针对内部 span 的选择器。input、textarea、select、canvas 及皮肤管理内的 text 不被替换，避免改变输入值或破坏恢复入口。
+最多 300 项。每项需要 selector，其他字段可选，内容为最多 1000 字符的纯文本，允许空字符串。每个字段也可写成语言映射（`{ "zh-CN": "…", "en-US": "…" }`），匹配顺序为完整语言标签、同语种、`zh-CN`、映射首项。text 优先替换第一个非空的**直接文本节点**；控件标签被界面翻译包装进 `[data-i18n]` 元素时，兼容替换该标签的文字，仍保留包装、img、kbd、input 等子节点，不进入内嵌按钮或表单控件查找。皮肤提供的文案优先于应用默认翻译，中英文各自采用皮肤对应的名称，不用默认皮肤的称呼替换。不会用 innerHTML，不解释标签。没有可替换的标签时不制造整段内容，可改为针对内部 span 的选择器。input、textarea、select、canvas 及皮肤管理内的 text 不被替换，避免改变输入值或破坏恢复入口。
+
+设置中的语言分类以“界面语言 / Language”显示，语言选择会持久保存并重新加载界面；有未保存谱面时先提示保存。`@language-settings`、`@language-select` 是 API 3 的兼容扩展，按这些入口定位，不依赖中文或英文标签内容。新用户默认音符资源包为内置 `builtin-sea-of-dreams`（Sea of Dreams - Neo），用户保存的音符皮肤选择优先；它独立于编辑器皮肤，不改变编辑器皮肤包的格式和词条。
 
 title、ariaLabel、placeholder 分别修改同名 HTML 提示、aria-label、占位属性，不修改表单值。页面动态生成和状态改变后会重新匹配；同一元素同一字段的后续匹配项覆盖前项。状态不再匹配或卸载皮肤时复原应用原来的内容。应用主动更新的状态文字仍作为复原来源，不永久回写。
 

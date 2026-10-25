@@ -9,6 +9,7 @@ export const EDITOR_SKIN_COMPONENTS = Object.freeze({
   'editor-actions': '.editor-footer', inspector: '.inspector', 'inspector-tabs': '.inspector-tabs', 'chart-tools': '[data-panel="chart"] .action-grid',
   'project-home': '#home', 'project-list': '#project-cards', footer: 'body > footer', status: '#status', notifications: '#notifications',
   dialog: '#modal', settings: '#settings-modal', 'settings-body': '.settings-body', 'theme-settings': '#editor-skin-settings',
+  'language-settings': '#language-settings', 'language-select': '#ui-language',
   'note-skin-settings': '#note-skin-settings', 'note-skins-open': '#note-skins-open', 'note-skin-manager': '#note-skin-modal', 'note-skin-gallery': '.note-skin-gallery',
   'mod-manager': '#mod-manager', 'mod-list': '.mod-manager-list', 'mod-details': '.mod-manager-details', 'mod-status': '#mods-status', 'mod-warning': '#mod-import-warning',
   'context-menu': '.timeline-context-menu', 'line-overview': '.line-switcher', 'clipboard-history': '#clipboard-results',

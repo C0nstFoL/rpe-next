@@ -1,5 +1,5 @@
 import { localPreferences } from '../platform/local-preferences.mjs';
-import { rewriteModModule,resolveModImport,modPath,modSettingValue } from '../core/mod-package.mjs';
+import { rewriteModModule,resolveModImport,modPath,modSettingValue,resolveModManifest } from '../core/mod-package.mjs';
 import { registerModHook,emitModHook } from '../core/mod-hooks.mjs';
 import { parseShortcut,formatShortcut } from '../core/shortcut-spec.mjs';
 import { shortcutKey,shortcutMatches } from '../core/preferences.mjs';
@@ -94,7 +94,8 @@ export class ModRuntime {
   }
   createApi(state){
     const {scope,id,record}=state;const storedKey='rpe-next-mod-data:'+id;
-    const api={version:1,id,manifest:record.manifest,editor:this.editor,signal:scope.controller.signal,dispose:fn=>scope.defer(fn),
+    const manifest=resolveModManifest(record.manifest);
+    const api={version:1,id,manifest,manifestSource:structuredClone(record.manifest),editor:this.editor,signal:scope.controller.signal,dispose:fn=>scope.defer(fn),
       log:(...args)=>console.log('[mod '+id+']',...args),notify:(message,level='success')=>this.notify(String(message),level),
       listen:(target,type,fn,options)=>scope.listen(target,type,fn,options),
       on:(type,fn)=>scope.listen(this.events,type,event=>fn(event.detail)),emit:(type,detail)=>this.emit('mod:'+id+':'+type,detail),
@@ -126,7 +127,7 @@ export class ModRuntime {
         register:definition=>{
           const wrap=definition=>Object.fromEntries(Object.entries(definition).map(([key,value])=>[key,typeof value==='function'?(...args)=>{if(scope.closed)throw Error(t('mod-runtime.sdaeeea1'));try{return value(...args);}catch(error){this.failure(id,error);throw error;}}:value]));
           return scope.defer(this.editor.globalEventRegistry.register({...wrap(definition),columns:definition.columns?.map(wrap)},
-            {kind:'mod',id,name:record.manifest.name,author:record.manifest.author,version:record.manifest.version}));
+            {kind:'mod',id,name:manifest.name,author:manifest.author,version:manifest.version}));
         },
         list:()=>this.editor.globalEvents.document.types.map(type=>({id:type.id,name:type.name,source:{...type.source},persistent:type.persistent,readonly:type.readonly,columns:type.columns.map(column=>({id:column.id,name:column.name,valueType:column.valueType}))})),
         read:(type,column)=>this.editor.globalEvents.document.read(type.includes('/')?type:id+'/'+type,column),

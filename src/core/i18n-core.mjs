@@ -16,8 +16,8 @@ const formatters = new Map();
 export function normalizeLocale(value) {
   const text = String(value ?? '').trim().replace(/_/g, '-');
   if (!text) return '';
-  const [language, region] = text.split('-');
-  return region ? `${language.toLowerCase()}-${region.toUpperCase()}` : language.toLowerCase();
+  try { return Intl.getCanonicalLocales(text)[0]; }
+  catch { return text.toLowerCase(); }
 }
 
 export function baseLocale(value) {
@@ -39,6 +39,7 @@ function applyCatalog(entry) {
   active = entry.locale;
   activeBase = baseLocale(entry.locale);
   activeInfo = entry;
+  formatters.clear();
   emit('locale');
 }
 
@@ -53,7 +54,7 @@ export function currentLocale() {
 export function setLocale(value) {
   const requested = normalizeLocale(value);
   const match = catalogs.get(requested)
-    ?? [...catalogs.keys()].find(locale => baseLocale(locale) === baseLocale(requested))
+    ?? [...catalogs.values()].find(entry => baseLocale(entry.locale) === baseLocale(requested))
     ?? catalogs.get(FALLBACK_LOCALE)
     ?? [...catalogs.values()][0];
   if (!match) return currentLocale();
@@ -82,9 +83,9 @@ export function catalogExtras(locale = active, name) {
 // an optional plain `foo` as fallback. Languages that do not know a category
 // fall back to `other`, so a new locale only has to translate the categories
 // listed for it in `messages` (zh-CN keeps just `foo.other`).
-function pluralTemplate(messages, base, count) {
+function pluralTemplate(messages, base, count, locale = active) {
   if (!messages) return undefined;
-  const category = pluralText(active, count);
+  const category = pluralText(locale, count);
   for (const candidate of [`${base}.${category}`, `${base}.other`, base]) {
     if (messages[candidate] !== undefined) return messages[candidate];
   }
@@ -98,7 +99,7 @@ export function translate(key, parameters) {
   if (template === undefined && parameters && Object.hasOwn(parameters, 'count')) template = pluralTemplate(activeMessages, key, parameters.count);
   if (template === undefined && key.includes('.count')) template = pluralTemplate(activeMessages, key.split('.')[0], parameters?.count ?? 0);
   if (template === undefined) template = fallbackMessages?.[key];
-  if (template === undefined && parameters && Object.hasOwn(parameters, 'count')) template = pluralTemplate(fallbackMessages, key, parameters.count);
+  if (template === undefined && parameters && Object.hasOwn(parameters, 'count')) template = pluralTemplate(fallbackMessages, key, parameters.count, FALLBACK_LOCALE);
   if (template === undefined) return String(key);
   return interpolate(template, parameters);
 }

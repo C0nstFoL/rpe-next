@@ -45,12 +45,17 @@ test('生成的机器可读目录与运行时约定一致', async () => {
   assert.deepEqual(catalogue.tokens, EDITOR_SKIN_DEFAULT_TOKENS);
   assert.ok(catalogue.panels.includes('noise-properties'));
   assert.equal(catalogue.aliases['beat-display'], '#beat-display'); assert.equal(catalogue.aliases.clock, '#clock');
+  assert.equal(catalogue.aliases['language-settings'], '#language-settings'); assert.equal(catalogue.aliases['language-select'], '#ui-language');
   assert.ok(catalogue.movableCommands.includes('time-readouts'));
   assert.equal(catalogue.aliases['version-control-tool'], '#version-control-tool');
   assert.equal(catalogue.aliases['version-control-panel'], '#version-control-panel');
   assert.ok(catalogue.movableCommands.includes('version-control-tool')); assert.ok(catalogue.panels.includes('version-control'));
   const schema = JSON.parse(await readFile(new URL('../schemas/editor-skin-v1.schema.json', import.meta.url)));
   assert.equal(schema.properties.version.const, 1);
+  for (const definition of [schema.properties.name, schema.properties.description, schema.properties.license, schema.properties.organize.items.properties.label, schema.properties.texts.items.properties.text, schema.properties.parameters.additionalProperties.properties.label]) {
+    assert.ok(definition.oneOf.some(option => option.type === 'string'));
+    assert.ok(definition.oneOf.some(option => option.type === 'object' && option.propertyNames.pattern));
+  }
 });
 
 test('作用域、含逗号的伪类、伪元素和素材宏均正确生成，图标可由主题样式进一步覆盖', () => {

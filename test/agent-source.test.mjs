@@ -21,7 +21,11 @@ test('源码收集仅包含程序源码、公开协议和内置模组，不接�
   assert.deepEqual(paths, ['assets/mods/test/main.mjs', 'desktop/main.cjs', 'package.json', 'protocols/AI-AGENT-PROTOCOL.zh-CN.md', 'src/core/example.mjs']);
   assert.ok(!JSON.stringify(result).includes('private-key-fixture')); assert.ok(paths.every(isAgentSourcePath));
   const actual = await createAgentSourceBundle(fileURLToPath(new URL('../', import.meta.url)));
-  for (const path of ['src/core/curve-trajectory.mjs', 'src/ui/app.mjs', 'desktop/main.cjs', 'styles.css', 'schemas/mod-api-v1.d.ts']) assert.ok(actual.files.some(entry => entry.path === path), path);
+  for (const path of ['src/core/curve-trajectory.mjs', 'src/ui/app.mjs', 'src/i18n.mjs', 'src/locales/zh-CN.mjs', 'src/locales/en-US.mjs', 'desktop/main.cjs', 'styles.css', 'schemas/mod-api-v1.d.ts']) assert.ok(actual.files.some(entry => entry.path === path), path);
+  const index = new AgentSourceIndex(actual);
+  const prompt = await index.query({ action: 'search', path: 'src/locales/', query: 'agent-prompt.s0f270aa' });
+  assert.equal(prompt.total, 2);
+  const module = await index.query({ action: 'read', path: 'src/i18n.mjs', lineCount: 1 }); assert.ok(module.lines.length);
 });
 
 test('源码支持文件分页、字面搜索、准确行号及超长行无遗漏续读，不执行源文本', async () => {

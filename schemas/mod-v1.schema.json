@@ -45,31 +45,16 @@
       ]
     },
     "version": {
-      "oneOf": [
-        {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 60
-        },
-        {
-          "type": "object",
-          "minProperties": 1,
-          "propertyNames": {
-            "pattern": "^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$"
-          },
-          "additionalProperties": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 60
-          }
-        }
-      ]
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60,
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:[-+][a-zA-Z0-9.-]+)?$"
     },
     "author": {
       "oneOf": [
         {
           "type": "string",
-          "minLength": 1,
+          "minLength": 0,
           "maxLength": 160
         },
         {
@@ -80,7 +65,7 @@
           },
           "additionalProperties": {
             "type": "string",
-            "minLength": 1,
+            "minLength": 0,
             "maxLength": 160
           }
         }
@@ -90,7 +75,7 @@
       "oneOf": [
         {
           "type": "string",
-          "minLength": 1,
+          "minLength": 0,
           "maxLength": 4000
         },
         {
@@ -101,7 +86,7 @@
           },
           "additionalProperties": {
             "type": "string",
-            "minLength": 1,
+            "minLength": 0,
             "maxLength": 4000
           }
         }

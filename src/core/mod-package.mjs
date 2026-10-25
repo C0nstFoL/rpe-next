@@ -1,6 +1,6 @@
 import { parse } from './vendor/acorn.mjs';
 import { parseShortcut } from './shortcut-spec.mjs';
-import { isLocalizedMap, t } from '../i18n.mjs';
+import { isLocalizedMap, localizedValue, t } from '../i18n.mjs';
 
 export const MOD_API_VERSION = 1;
 export const MOD_LIMITS = Object.freeze({ files: 2048, bytes: 128 * 1024 * 1024, fileBytes: 32 * 1024 * 1024, codeBytes: 4 * 1024 * 1024 });
@@ -25,12 +25,20 @@ export function modManifest(source) {
   if (source.settings !== undefined && (!object(source.settings) || Object.keys(source.settings).length > 100)) fail(t('mod-package.s1daf273'));
   for (const [key,definition] of Object.entries(source.settings ?? {})) {
     if (!identifier.test(key) || !object(definition) || !textLimit(definition.label, 120, true) || !['boolean','number','text','color','select','shortcut'].includes(definition.type)) fail(t('mod-package.s9a6842c') + key);
+    if (definition.description !== undefined && !textLimit(definition.description, 2000)) fail(t('mod-package.s9a6842c') + key);
     if (definition.type === 'select' && (!object(definition.options) || !Object.keys(definition.options).length || Object.keys(definition.options).length>200 || Object.entries(definition.options).some(([key,label])=>key.length>2000||!textLimit(label,2000)))) fail(t('mod-package.sa9e55a1'));
     if (definition.type === 'number' && (!Number.isFinite(definition.min) || !Number.isFinite(definition.max) || definition.min > definition.max)) fail(t('mod-package.sce0b9c5'));
     if (definition.step!==undefined&&(!Number.isFinite(definition.step)||definition.step<=0))fail(t('mod-package.sc2ef5f2'));
     modSettingValue(definition,definition.default,key);
   }
   return { ...source, dependencies: [...new Set(source.dependencies ?? [])], conflicts: [...new Set(source.conflicts ?? [])], settings: source.settings ?? {} };
+}
+export function resolveModManifest(source) {
+  return { ...source, name: localizedValue(source.name), author: localizedValue(source.author), description: localizedValue(source.description),
+    settings: Object.fromEntries(Object.entries(source.settings ?? {}).map(([key, definition]) => [key, { ...definition, label: localizedValue(definition.label),
+      ...(definition.description === undefined ? {} : { description: localizedValue(definition.description) }),
+      ...(definition.type === 'select' ? { options: Object.fromEntries(Object.entries(definition.options).map(([value, label]) => [value, localizedValue(label)])) } : {})
+    }])) };
 }
 export function modSettingValue(definition,value,key='') {
   if(!definition)fail(t('mod-package.s3d58418')+key);

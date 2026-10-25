@@ -6,6 +6,7 @@ import { RpeSkin } from './skin.mjs';
 import { assetUrl } from '../core/asset-url.mjs';
 import { download } from '../platform/files.mjs';
 import { hitFrame } from '../core/visual-constants.mjs';
+import { DEFAULT_APPEARANCE } from '../core/default-settings.mjs';
 import { t } from '../i18n.mjs';
 
 const ACTIVE_KEY='rpe-next-note-skin-v1';
@@ -31,7 +32,7 @@ export class NoteSkins {
           record.builtin=Boolean(builtin);record.originalFiles=builtin?.files??new Map(stored.originalFiles??stored.files);this.records.set(record.id,record);
         } catch(error) {this.notify(t('note-skins.sae607ad')+error.message,'warning');}
       }
-      const id=localPreferences.getItem(ACTIVE_KEY)??'default';
+      const id=localPreferences.getItem(ACTIVE_KEY)??DEFAULT_APPEARANCE.noteSkin;
       if(id!=='default'&&!this.records.has(id)) {localPreferences.removeItem(ACTIVE_KEY);this.notify(t('note-skins.sc1e1b9b'),'warning');}
       else if(id!=='default')await this.activate(id,false);
     } catch(error) {this.notify(t('note-skins.sc10ed5f')+error.message,'warning');}

@@ -21,7 +21,7 @@ export function isDefaultLineGroup(chart, lineOrIndex) { return lineGroupIndex(t
 
 export function isDefaultLineName(line, index) {
   const name = String(line?.Name ?? '').trim();
-  return !name || name === `Line ${index + 1}` || name === t('line-groups.s96ed554', { p0: index + 1 }) || name === t('line-groups.s1527a9c', { p0: index + 1 });
+  return !name || name === `Line ${index + 1}` || name === `判定线 ${index + 1}` || name === `判定线${index + 1}`;
 }
 
 export function lineNameLabel(line, index) {

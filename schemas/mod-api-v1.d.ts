@@ -1,20 +1,26 @@
 /** RPEN mod API 1. Internal editor classes remain extensible and version-dependent. */
 export type Dispose = () => void;
 export type Beat = [number, number, number];
-export type Setting = {
-  label: string; description?: string;
+export type LocalizedText = string | Record<string, string>;
+export type SettingDefinition<Text = string> = {
+  label: Text; description?: Text;
 } & (
   | {type: 'boolean'; default: boolean}
   | {type: 'number'; default: number; min: number; max: number; step?: number}
   | {type: 'text' | 'color' | 'shortcut'; default: string}
-  | {type: 'select'; default: string; options: Record<string, string>}
+  | {type: 'select'; default: string; options: Record<string, Text>}
 );
+export type Setting = SettingDefinition;
 export interface ModManifest {
   protocol: 'rpen-mod'; api: 1; id: string; name: string;
   version: string; author: string; description: string; entry: string;
   dependencies?: string[]; conflicts?: string[]; settings?: Record<string, Setting>;
   [extension: `x-${string}`]: unknown;
 }
+export type ModManifestSource = Omit<ModManifest, 'name' | 'author' | 'description' | 'settings'> & {
+  name: LocalizedText; author: LocalizedText; description: LocalizedText;
+  settings?: Record<string, SettingDefinition<LocalizedText>>;
+};
 export interface Frame {
   /** requestAnimationFrame timestamp in milliseconds. */
   timestamp: number;
@@ -149,7 +155,7 @@ export interface ModApi {
     }): Dispose;
     list(): Array<{type: 'function'; function: {name: string; description: string; parameters: any}}>;
   };
-  readonly version: 1; readonly id: string; readonly manifest: ModManifest;
+  readonly version: 1; readonly id: string; readonly manifest: ModManifest; readonly manifestSource: ModManifestSource;
   readonly editor: Editor; readonly signal: AbortSignal;
   dispose(cleanup: () => unknown): Dispose;
   log(...values: unknown[]): void;

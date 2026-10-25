@@ -8,6 +8,7 @@ const css = { type: 'string', minLength: 1, maxLength: 3000, description: 'CSS d
 const selector = { type: 'string', minLength: 1, maxLength: 500, description: 'CSS selector, optionally using @component aliases. Must pass editorSkinSelector and browser selector validation.' };
 const assetRef = { ...identifier, description: 'A key in assets; image/font type checked at import.' };
 const map = (additionalProperties, maxProperties) => ({ type: 'object', additionalProperties, ...(maxProperties ? { maxProperties } : {}) });
+const localized = value => ({ oneOf: [value, { type: 'object', minProperties: 1, additionalProperties: value, propertyNames: { pattern: '^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$' } }] });
 const declarations = { ...map(css, 100), propertyNames: { pattern: '^(--(skin|rpen)-[a-z0-9-]+|-?[a-z][a-z0-9-]*)$' } };
 const schema = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -72,6 +73,13 @@ schema.properties.icons = { oneOf: [schema.properties.icons, { type: 'array', ma
 schema.properties.decorations.items.required = ['id', 'asset'];
 schema.properties.decorations.items.anyOf = [{ required: ['target'] }, { required: ['selector'] }];
 Object.assign(schema.properties.decorations.items.properties, { selector, placement: { enum: ['prepend', 'append', 'before', 'after'] } });
+for (const key of ['name', 'description', 'license']) schema.properties[key] = localized(schema.properties[key]);
+schema.properties.organize.items.properties.label = localized(schema.properties.organize.items.properties.label);
+for (const key of ['text', 'title', 'ariaLabel', 'placeholder']) schema.properties.texts.items.properties[key] = localized(schema.properties.texts.items.properties[key]);
+schema.properties.parameters.additionalProperties.properties.label = localized(schema.properties.parameters.additionalProperties.properties.label);
+schema.properties.parameters.additionalProperties.properties.options.additionalProperties = localized(schema.properties.parameters.additionalProperties.properties.options.additionalProperties);
+schema.properties.variants.additionalProperties.properties.name = localized(schema.properties.variants.additionalProperties.properties.name);
+declarations.additionalProperties = localized(css);
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const catalogue = {
   protocol: 'rpen-editor-skin', version: 1, api: EDITOR_SKIN_API, aliases: EDITOR_SKIN_COMPONENTS, slots: EDITOR_SKIN_SLOTS, movableCommands: EDITOR_SKIN_MOVABLE,
@@ -82,7 +90,7 @@ const catalogue = {
   hide: { maxSelectors: 300, selectors: 'CSS selectors and @component aliases', behavior: 'Presentation only; preserves functional nodes, values, application visibility state and hotkeys.' },
   panels: [...html.matchAll(/<section data-panel="([^"]+)"/g)].map(match => match[1]),
   staticIds: [...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]),
-  runtimeRoots: ['#settings-modal', '#editor-skin-settings', '#note-skin-settings', '#note-skin-modal', '#mod-manager', '#mod-import-warning', '.line-switcher', '.batch-controls', '.collaboration-chat', '.event-sample-panel', '.noise-sample-bar', '.skin-control-group', '[data-skin-decoration]'],
+  runtimeRoots: ['#settings-modal', '#language-settings', '#ui-language', '#editor-skin-settings', '#note-skin-settings', '#note-skin-modal', '#mod-manager', '#mod-import-warning', '.line-switcher', '.batch-controls', '.collaboration-chat', '.event-sample-panel', '.noise-sample-bar', '.skin-control-group', '[data-skin-decoration]'],
   notes: ['Aliases, slots, tokens, canvas roles and listed state attributes are the API 3 contract; existing entries retain their meaning. Static IDs and unlisted classes are implementation details.', 'Do not use generated input order or translated label text to identify controls.'],
 };
 const root = new URL('../schemas/', import.meta.url); await mkdir(root, { recursive: true });

@@ -6,6 +6,18 @@ import { setEditorCanvasSkin } from './editor-skin-canvas.mjs';
 import { emitModHook } from '../core/mod-hooks.mjs';
 import { t } from '../i18n.mjs';
 
+function labelTextNode(element) {
+  const direct = [...element.childNodes].find(node => node.nodeType === 3 && node.textContent.trim());
+  if (direct) return direct;
+  for (const label of element.querySelectorAll('[data-i18n]')) {
+    const control = label.closest('button,input,textarea,select,canvas');
+    if (control && control !== element) continue;
+    const node = [...label.childNodes].find(node => node.nodeType === 3 && node.textContent.trim());
+    if (node) return node;
+  }
+  return null;
+}
+
 function safeSvg(bytes) {
   const source = new TextDecoder().decode(bytes); if (/<!DOCTYPE|<!ENTITY/i.test(source)) throw new Error(t('editor-skin-runtime.s7933796'));
   const svg = new DOMParser().parseFromString(source, 'image/svg+xml');
@@ -23,8 +35,13 @@ function safeSvg(bytes) {
 export class EditorSkinRuntime {
   constructor(invalidate) {
     this.invalidate = invalidate; this.urls = []; this.faces = []; this.moves = new Map(); this.patches = new Map(); this.aliases = new Map(); this.groups = []; this.decorations = [];
+    this.textTargets = new WeakSet();
     this.observer = new MutationObserver(mutations => {
-      if (mutations.some(mutation => mutation.type === 'attributes' ? mutation.oldValue !== mutation.target.getAttribute(mutation.attributeName) : this.patches.has(mutation.target) || this.patches.has(mutation.target.parentElement) || [...mutation.addedNodes].some(node => node.nodeType === 1))) this.schedule();
+      if (mutations.some(mutation => mutation.type === 'attributes'
+        ? ['title', 'aria-label', 'placeholder'].includes(mutation.attributeName)
+          ? this.patches.get(mutation.target)?.has(mutation.attributeName) && mutation.oldValue !== mutation.target.getAttribute(mutation.attributeName)
+          : mutation.oldValue !== mutation.target.getAttribute(mutation.attributeName)
+        : this.textTargets.has(mutation.target) || this.textTargets.has(mutation.target.parentElement) || this.patches.has(mutation.target) || this.patches.has(mutation.target.parentElement) || [...mutation.addedNodes].some(node => node.nodeType === 1))) this.schedule();
     });
   }
   async prepare(record) {
@@ -74,7 +91,7 @@ export class EditorSkinRuntime {
     this.sync(); this.observe(); this.invalidate();
   }
   observe() {
-    this.observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeOldValue: true, attributeFilter: ['class', 'hidden', 'data-playing', 'aria-expanded', 'aria-pressed', 'disabled'] });
+    this.observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeOldValue: true, attributeFilter: ['class', 'hidden', 'data-playing', 'aria-expanded', 'aria-pressed', 'disabled', 'title', 'aria-label', 'placeholder'] });
     if ((this.prepared?.record.skin.texts ?? []).some(entry => /data-rpen-/.test(entry.selector))) this.observer.observe(document.documentElement, { attributes: true, attributeOldValue: true, attributeFilter: ['data-rpen-playing', 'data-rpen-dirty', 'data-rpen-pane', 'data-rpen-mode', 'data-rpen-location', 'data-rpen-collaboration', 'data-rpen-beat'] });
   }
   schedule() {
@@ -113,6 +130,7 @@ export class EditorSkinRuntime {
       }
     }
     const matched = new Map();
+    this.textTargets = new WeakSet();
     for (const entry of record.skin.texts ?? []) {
       const selector = entry.selector.replace(/@([a-z][a-z0-9-]*)/g, (_, id) => EDITOR_SKIN_COMPONENTS[id]);
       for (const element of document.querySelectorAll(selector)) {
@@ -124,8 +142,9 @@ export class EditorSkinRuntime {
           if (value === undefined) continue;
           if (key === 'text') {
             if (element.matches('input,textarea,select,canvas') || element.closest('#editor-skin-settings')) continue;
-            let node = [...element.childNodes].find(node => node.nodeType === 3 && node.textContent.trim());
+            const node = labelTextNode(element);
             if (!node) continue;
+            this.textTargets.add(node); this.textTargets.add(node.parentElement);
             const previous = patches.get(key);
             patches.set(key, { node, original: previous?.node === node && node.textContent === previous.applied ? previous.original : node.textContent, applied: value });
             if (!matched.has(element)) matched.set(element, new Set()); matched.get(element).add(key);
@@ -169,6 +188,7 @@ export class EditorSkinRuntime {
     for (const [element, original] of this.aliases) { if (original === null) element.removeAttribute('data-ui'); else element.setAttribute('data-ui', original); }
     this.urls.forEach(url => URL.revokeObjectURL(url));
     this.prepared = null; this.sheet = null; this.urls = []; this.faces = []; this.moves.clear(); this.patches.clear(); this.aliases.clear(); this.groups = []; this.decorations = [];
+    this.textTargets = new WeakSet();
     delete document.documentElement.dataset.editorSkin; setEditorCanvasSkin(null);
   }
 }
