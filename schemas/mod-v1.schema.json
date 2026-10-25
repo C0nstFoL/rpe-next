@@ -98,6 +98,19 @@
       "maxLength": 240,
       "pattern": "\\.m?js$"
     },
+    "homepage": {
+      "type": "string",
+      "format": "uri"
+    },
+    "market": {
+      "type": "object",
+      "required": ["id", "api"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "api": { "type": "string", "format": "uri", "pattern": "^https?://" }
+      },
+      "additionalProperties": true
+    },
     "dependencies": {
       "$ref": "#/$defs/ids"
     },

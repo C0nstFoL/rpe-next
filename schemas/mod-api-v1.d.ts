@@ -15,6 +15,8 @@ export interface ModManifest {
   protocol: 'rpen-mod'; api: 1; id: string; name: string;
   version: string; author: string; description: string; entry: string;
   dependencies?: string[]; conflicts?: string[]; settings?: Record<string, Setting>;
+  homepage?: string;
+  market?: {id: string; api: string; [key: string]: unknown};
   [extension: `x-${string}`]: unknown;
 }
 export type ModManifestSource = Omit<ModManifest, 'name' | 'author' | 'description' | 'settings'> & {

@@ -19,7 +19,7 @@ for (const file of sourceBundle.files) if (names.has(file.path)) assert.equal(fi
 assert.ok((await sourceIndex.query({ action: 'search', query: 'trajectoryChart', path: 'src/application/' })).total > 0);
 assert.ok(!sourceBundle.files.some(file => file.path.startsWith('.local-tools/') || file.path.endsWith('DESKTOP-STORAGE.zh-CN.md') || file.path.endsWith('OFFICIAL-IMPORT.zh-CN.md')));
 const mods=JSON.parse(await readFile(new URL('assets/mods/index.json',root),'utf8'));
-assert.deepEqual(mods.map(mod=>mod.directory),['sky-dodge','pixel-miner','spatial-camera']);
+assert.deepEqual(mods.map(mod=>mod.directory),['sky-dodge','pixel-miner','spatial-camera','rpen-mod-market']);
 for (const name of names) assert.match(name, /^(?:index\.html|styles\.css|LICENSE|NOTICE|protocols\/(?:(?:EDITOR-SKIN|MOD|GLOBAL-EVENTS|AI-AGENT)-PROTOCOL|CHART-VERSION-CONTROL|AUDIO-SEPARATION)\.zh-CN\.md|schemas\/(?:mod-(?:v1\.schema\.json|api-v1\.d\.ts)|editor-skin-(?:v1\.schema|components\.v1)\.json)|\.nojekyll|assets\/.+|src\/(?:core|application|platform|ui|locales)\/.+|src\/i18n\.mjs)$/);
 function checkReference(reference, file) {
   const resolved = new URL(reference, new URL(file, site));

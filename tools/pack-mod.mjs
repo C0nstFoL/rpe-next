@@ -1,6 +1,6 @@
 import { readdir,readFile,writeFile } from 'node:fs/promises';
 import { resolve,join,basename } from 'node:path';
-import { parseModPackage } from '../src/core/mod-package.mjs';
+import { parseModPackage,resolveModManifest } from '../src/core/mod-package.mjs';
 import { exportMod } from '../src/platform/mods.mjs';
 
 if(!process.argv[2])throw Error('用法：node tools/pack-mod.mjs <目录> [输出.rpenmod]');
@@ -15,4 +15,4 @@ async function visit(relative=''){
 }
 await visit();const record=parseModPackage(files);const output=resolve(process.argv[3]??basename(root)+'.rpenmod');
 await writeFile(output,new Uint8Array(await exportMod(record).arrayBuffer()));
-console.log(`${record.manifest.name} · ${record.manifest.version} → ${output}`);
+console.log(`${resolveModManifest(record.manifest).name} · ${record.manifest.version} → ${output}`);

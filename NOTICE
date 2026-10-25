@@ -5,6 +5,7 @@ Required Notice: Re:PhiEdit Next is reconstructed from the original Re:PhiEdit (
 原项目及独立第三方内容的权利归相应权利人所有；保留其适用的许可及来源声明。
 感谢 Stellate 提供噪域皮肤协议，以及 NoiseField、Ocean 两套内置噪域皮肤。
 感谢 -虹之梦- 提供内置音符皮肤“梦之海（Sea of Dreams - Neo）”。
+感谢 NyamonZone 提供内置的 Nyamon 模组市场，基于其 1.0.2 版本集成与维护。
 音符资源包兼容 Phira / prpr 的资源包格式。YAML 解析使用 js-yaml 5.5.0（MIT），其许可见 src/core/vendor/LICENSE-js-yaml.txt。
 模组 ES 模块语法解析使用 Acorn 8.19.0（MIT），其许可见 src/core/vendor/LICENSE-acorn.txt。
 网页端编辑器截图使用 html-to-image 1.11.13（MIT），其许可见 src/core/vendor/LICENSE-html-to-image.txt。
