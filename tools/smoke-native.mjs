@@ -6,7 +6,6 @@ const run = (contents, fn, ...args) => contents.executeJavaScript(`(${fn})(...${
 
 export async function prepareNative(contents) {
   await run(contents, async () => {
-    localStorage.setItem('rpe-next-locale-v1', 'zh-CN');
     const { createChart } = await import('/src/core/chart.mjs');
     const { builtinEditorSkins } = await import('/src/platform/editor-skins.mjs');
     const { builtinMods } = await import('/src/platform/mods.mjs');
@@ -94,10 +93,17 @@ export async function smokeNative(contents, service, controls) {
       const stale = { ...project }; await library.storeProject(project);
       let conflict = false; try { await library.storeProject(stale); } catch (error) { conflict = error.name === 'ProjectConflictError'; }
       localPreferences.setItem('rpe-next-native-restart-test', 'persistent'); await flushLocalPreferences();
-      document.querySelector('#settings-modal').showModal(); await new Promise(resolve => setTimeout(resolve, 100));
-      return { ticks, conflict, status: document.querySelector('#storage-status').textContent, persistHidden: document.querySelector('#storage-persist').hidden, controls: ['storage-open-root', 'storage-move-root', 'storage-backup-folder', 'storage-trash', 'storage-rebuild', 'storage-collect'].every(id => document.getElementById(id)), revision: project.storageRevision };
+      const { nativeStorage } = await import('/src/platform/native.mjs');
+      const root = (await nativeStorage.call('status')).root;
+      document.querySelector('#settings-modal').showModal();
+      const deadline = performance.now() + 15000;
+      while (!document.querySelector('#storage-status').textContent.includes(root)) {
+        if (performance.now() > deadline) throw Error('Native storage status did not show the library path: ' + document.querySelector('#storage-status').textContent);
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      return { ticks, conflict, root, status: document.querySelector('#storage-status').textContent, persistHidden: document.querySelector('#storage-persist').hidden, controls: ['storage-open-root', 'storage-move-root', 'storage-backup-folder', 'storage-trash', 'storage-rebuild', 'storage-collect'].every(id => document.getElementById(id)), revision: project.storageRevision };
     });
-    assert.ok(result.ticks > 0); assert.ok(result.conflict); assert.ok(result.controls); assert.ok(result.persistHidden); assert.ok(result.status.includes('谱面库：'));
+    assert.ok(result.ticks > 0); assert.ok(result.conflict); assert.ok(result.controls); assert.ok(result.persistHidden); assert.ok(result.status.includes(result.root));
     checks.push('real preload IPC saves asynchronously, detects stale snapshots and exposes native storage controls');
     const fixtureId = await run(contents, async () => {
       document.querySelector('#settings-modal').close(); document.querySelector('#new').click(); document.querySelector('#metadata').click();
