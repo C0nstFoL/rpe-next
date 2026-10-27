@@ -89,6 +89,7 @@ const packaged = await packager({
   appBundleId: kind === 'server' ? 'io.github.kclg-ysj.rpe-next.server' : 'io.github.kclg-ysj.rpe-next',
   appCopyright: 'Copyright 2026 cmdysj', prune: false, asar: false, overwrite: false,
   darwinDarkModeSupport: true,
+  ...(kind === 'editor' && platform === 'darwin' ? { extendInfo: { NSMicrophoneUsageDescription: '按住语音输入快捷键时，在本机识别麦克风音频并填入文本框。Microphone audio is transcribed locally while the dictation key is held.' } } : {}),
   ...(platform === 'darwin' ? { osxSign: { identity: '-', identityValidation: false, continueOnError: false } } : {}),
   afterExtract: [async ({ buildPath }) => trimLocales(buildPath)]
 });

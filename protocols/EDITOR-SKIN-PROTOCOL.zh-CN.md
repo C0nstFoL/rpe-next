@@ -180,7 +180,10 @@ tokens 是初始默认值，不是只能读取的常量。可在 `@root` 状态/
 | `footer` / `status` | `body > footer` / `#status` |
 | `notifications` | `#notifications` |
 | `dialog` / `settings` / `settings-body` | `#modal` / `#settings-modal` / `.settings-body` |
+| `settings-header` / `settings-navigation` / `settings-navigation-item` / `settings-search` | 设置页头、左侧分类导航、分类链接、搜索框；当前分类链接带 `aria-current="location"`，滚动与点击同步 |
+| `settings-category` / `settings-card` | 连续滚动的分类区块、原设置分组；分类用 `data-settings-section` 标识，值为 `general`、`appearance`、`editor`、`preview`、`audio`、`input`、`storage`、`compatibility`。搜索仅临时隐藏未匹配分组，不移除控件及状态 |
 | `language-settings` / `language-select` | `#language-settings` / `#ui-language`，语言分类与选择控件 |
+| `dictation-settings` / `dictation-indicator` / `dictation-candidate` / `dictation-permission` | 本地语音输入设置、按住说话状态浮层、可复制结果、麦克风授权与系统权限说明面板；听写状态浮层不改变当前输入焦点 |
 | `theme-settings` | `#editor-skin-settings` |
 | `context-menu` | `.timeline-context-menu` |
 | `line-overview` | `.line-switcher`，Ctrl+滚轮线缩略图 |

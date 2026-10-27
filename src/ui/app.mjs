@@ -53,8 +53,9 @@ import { EditorPlayback } from '../application/playback.mjs';
 import { readEditorPreferences, writeEditorPreferences } from '../platform/editor-preferences.mjs';
 import { ProjectHome } from './home.mjs';
 import { createSettingsPanel } from './settings.mjs';
+import { DictationInput } from './dictation.mjs';
 import { currentLocale, setLocale, t } from '../i18n.mjs';
-import { localeCandidates, preferredLocales, readLocalePreference, writeLocalePreference } from '../platform/locale.mjs';
+import { writeLocalePreference } from '../platform/locale.mjs';
 import { installDomTranslation } from './dom-i18n.mjs';
 import { chartDisplayName } from '../core/labels.mjs';
 import { showHotkeySettings } from './hotkey-settings.mjs';
@@ -98,9 +99,6 @@ import { AudioSources } from '../application/audio-sources.mjs';
 import { AudioOnsets } from '../application/audio-onsets.mjs';
 import { mapperTiming } from '../core/audio-mapper.mjs';
 
-for (const candidate of preferredLocales({ stored: readLocalePreference() })) {
-  if (setLocale(candidate).locale) break;
-}
 document.documentElement.lang = currentLocale().locale;
 
 try { await initializeLocalPreferences(); }
@@ -118,10 +116,14 @@ if (globalThis.rpenDesktopStorage) {
 const element = selector => document.querySelector(selector);
 let mods;
 let agentPanel;
+let dictationInput;
 globalThis.__rpenModInputGate=true;
 for(const type of ['keydown','keyup','wheel','pointerdown','pointerup','mousedown','mouseup','click','dblclick','contextmenu','drop','dragstart','input','change','submit'])window.addEventListener(type,event=>{
   const runtime=mods?.runtime;
   if(type==='keydown'&&event.ctrlKey&&event.altKey&&event.shiftKey&&event.key==='F11'){cancelValueDrag();event.preventDefault();event.stopImmediatePropagation();runtime?.emergency?.();return;}
+  if(type==='keydown')dictationInput?.keydown(event);
+  else if(type==='keyup')dictationInput?.keyup(event);
+  if(event.defaultPrevented)return;
   runtime?.handleInput(event);
   if(!event.defaultPrevented&&['keydown','keyup'].includes(type))handleValueDragKey(event);
 },{capture:true,passive:false});
@@ -155,7 +157,7 @@ const displayFields = [
   ['autosave-enabled', 'autoSave', true], ['autosave-seconds', 'autoSaveSeconds', 60], ['autosave-limit', 'autoSaveLimit', 10],
 ];
 const settingsDialog = createSettingsPanel({
-  onLocaleChange: (locale, previousLocale) => {
+  onLocaleChange: async (locale, previousLocale) => {
     // Skins, mods and toolbar buttons build their DOM once at startup, so a live
     // switch would leave them in the old language. Reload and reopen the chart.
     if (hasDocument && (session.history.dirty || assetDirty || !libraryProject?.id)) {
@@ -164,6 +166,8 @@ const settingsDialog = createSettingsPanel({
       return false;
     }
     writeLocalePreference(locale.locale);
+    try { await flushLocalPreferences(); }
+    catch (error) { writeLocalePreference(previousLocale); setLocale(previousLocale); reportError(error); return false; }
     try { if (hasDocument && libraryProject?.id) sessionStorage.setItem(LOCALE_REOPEN_KEY, libraryProject.id); } catch { /* storage unavailable */ }
     location.reload();
     return true;
@@ -675,6 +679,7 @@ const storagePanel = new StoragePanel(settingsDialog, { reportError, notify, fil
   if (hasDocument && (session.history.dirty || assetDirty)) { notify(t('app.sa139201'), 'warning'); return false; }
   return true;
 } });
+dictationInput = new DictationInput(settingsDialog, { notify });
 async function persistVersionRepoId() {
   if (!libraryProject?.id || libraryProject.vcsId) return;
   const current = session, repoId = versionRepoId, project = libraryProject;

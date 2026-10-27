@@ -2767,6 +2767,29 @@
       }
     },
     {
+      "selector": ".settings-nav-item",
+      "set": {
+        "color": "var(--rpen-ink-muted)",
+        "border-radius": "6px",
+        "font-size": "13px"
+      }
+    },
+    {
+      "selector": ".settings-nav-item:hover",
+      "set": {
+        "color": "var(--rpen-ink-text)",
+        "background": "var(--rpen-ink-hover)"
+      }
+    },
+    {
+      "selector": ".settings-nav-item[aria-current]",
+      "set": {
+        "color": "var(--rpen-ink-accent)",
+        "background": "color-mix(in srgb, var(--rpen-ink-accent) 9%, var(--rpen-ink-base))",
+        "border-color": "color-mix(in srgb, var(--rpen-ink-accent) 24%, var(--rpen-ink-base))"
+      }
+    },
+    {
       "selector": ".settings-body",
       "set": {
         "padding-right": "10px",

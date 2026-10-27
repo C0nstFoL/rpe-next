@@ -1,15 +1,17 @@
 import { DEFAULT_EDITOR_PREFERENCES, DEFAULT_SETTINGS } from '../core/default-settings.mjs';
 import { attachRangeValueTooltip } from './range-value-tooltip.mjs';
 import { availableLocales, currentLocale, setLocale, t } from '../i18n.mjs';
+import { createDictationSettings } from './dictation.mjs';
+import { SettingsNavigation } from './settings-navigation.mjs';
 
-// The panel is generated from `t()` keys. Switching the language rebuilds the
-// body in place; the two skin sections and the detail blocks moved out of
-// index.html stay the same nodes so their controllers remain connected.
 export function createSettingsPanel({ onLocaleChange = () => {} } = {}) {
   const dialog = document.createElement('dialog'); dialog.id = 'settings-modal';
   const body = document.createElement('div'); body.className = 'settings-body'; dialog.append(body);
-  const skins = document.createElement('section'); skins.id = 'editor-skin-settings';
-  const noteSkins = document.createElement('section'); noteSkins.id = 'note-skin-settings';
+  const skins = document.createElement('section'); skins.id = 'editor-skin-settings'; skins.dataset.settingsCategory = 'appearance';
+  const noteSkins = document.createElement('section'); noteSkins.id = 'note-skin-settings'; noteSkins.dataset.settingsCategory = 'appearance';
+  const dictation = createDictationSettings(); dictation.dataset.settingsCategory = 'input';
+  let navigation;
+  const categoryFor = { 'fps-unlimited': 'general', 'viewport-overflow': 'preview', volume: 'audio', 'line-numbers': 'preview', 'tips-enabled': 'general', 'text-selection-drag': 'input', 'line-switcher-enabled': 'input', 'clipboard-history-enabled': 'input', 'autosave-enabled': 'storage', 'include-backup-charts': 'compatibility' };
   // Detail blocks live in index.html; keep the same nodes across rebuilds.
   const moved = ['.preview-settings', '.display-settings', '.compatibility-details']
     .map(selector => document.querySelector(selector)).filter(Boolean);
@@ -35,6 +37,7 @@ export function createSettingsPanel({ onLocaleChange = () => {} } = {}) {
   };
   const group = (heading, fields, extraDefaults = []) => {
     const section = document.createElement('section'); section.className = 'settings-group';
+    section.dataset.settingsCategory = categoryFor[fields[0][0]] ?? 'editor';
     const headingRow = document.createElement('div'); headingRow.className = 'settings-group-heading';
     const title = document.createElement('h3'); title.textContent = heading;
     const reset = document.createElement('button'); reset.type = 'button'; reset.className = 'settings-reset'; reset.textContent = t('settings.sa191935');
@@ -45,22 +48,27 @@ export function createSettingsPanel({ onLocaleChange = () => {} } = {}) {
     body.append(section);
   };
   function build() {
-    const title = document.createElement('h2'); title.textContent = t('settings.s7debf9c'); dialog.prepend(title);
+    const header = document.createElement('div'); header.className = 'settings-header';
+    const title = document.createElement('h2'); title.id = 'settings-title'; title.textContent = t('settings.s7debf9c'); dialog.setAttribute('aria-labelledby', title.id);
+    const search = document.createElement('input'); search.type = 'search'; search.id = 'settings-search'; search.placeholder = t('settings.search'); search.setAttribute('aria-label', t('settings.search')); search.autocomplete = 'off';
+    search.oninput = () => navigation?.filter(search.value);
+    header.append(title, search); dialog.prepend(header);
 
-    // Language first: the choice applies instantly and rebuilds this panel.
-    const language = document.createElement('section'); language.className = 'settings-group'; language.id = 'language-settings';
+    const language = document.createElement('section'); language.className = 'settings-group'; language.id = 'language-settings'; language.dataset.settingsCategory = 'general';
     const languageHeading = document.createElement('h3'); languageHeading.textContent = t('settings.language'); language.append(languageHeading);
     const languageField = document.createElement('label'); languageField.className = 'field';
     const languageSelect = document.createElement('select'); languageSelect.id = 'ui-language'; languageSelect.setAttribute('aria-label', t('settings.language'));
     languageSelect.replaceChildren(...availableLocales().map(({ locale, label }) => new Option(label, locale)));
     languageSelect.value = currentLocale().locale;
-    languageSelect.onchange = () => {
+    languageSelect.onchange = async () => {
       // The host may reload the page to apply the language everywhere; it
       // returns false when the switch has to wait (unsaved chart).
       const previous = currentLocale().locale;
       const next = setLocale(languageSelect.value);
-      if (onLocaleChange(next, previous) === false) { setLocale(previous); languageSelect.value = previous; }
-      rebuild();
+      languageSelect.disabled = true;
+      try {
+        if (await onLocaleChange(next, previous) === false) { setLocale(previous); languageSelect.value = previous; return; }
+      } finally { languageSelect.disabled = false; }
     };
     const languageHint = document.createElement('p'); languageHint.className = 'hint'; languageHint.textContent = t('settings.languageHint');
     languageField.append(languageSelect); language.append(languageField, languageHint); body.append(language);
@@ -87,13 +95,14 @@ export function createSettingsPanel({ onLocaleChange = () => {} } = {}) {
   group(t('settings.s3a96efa'), [['event-cut-density', t('settings.s98708ba'), 'number', DEFAULT_SETTINGS.cutDensity, 0.1, 128, 0.1], ['rpe-event-drag', t('settings.rpeEventDrag'), 'checkbox', DEFAULT_EDITOR_PREFERENCES.rpeEventDrag], ['event-drag-sensitivity', t('settings.s59d9436'), 'range', DEFAULT_EDITOR_PREFERENCES.dragSensitivity, 0.1, 8, 0.1], ['sample-auto-fit', t('settings.sa4af917'), 'checkbox', true], ['paired-movement-sampling', t('settings.sd63631e'), 'checkbox', DEFAULT_EDITOR_PREFERENCES.pairedMovementSampling]]);
   const dragHint = document.createElement('p'); dragHint.className = 'hint'; dragHint.textContent = t('settings.s1ee44b7'); body.lastElementChild.append(dragHint);
   group(t('settings.s3334602'), [['text-selection-drag', t('settings.s745b520'), 'checkbox', false]]);
+  body.append(dictation);
   group(t('settings.s671e28c'), [['line-switcher-enabled', t('settings.s1e57415'), 'checkbox', true]]);
   group(t('settings.sc4eb94d'), [['clipboard-history-enabled', t('settings.sc239e97'), 'checkbox', true]]);
   const clipboardHint = document.createElement('p'); clipboardHint.className = 'hint'; clipboardHint.textContent = t('settings.saccc96a'); body.lastElementChild.append(clipboardHint);
   group(t('settings.s54a747c'), [['default-line-thickness', t('settings.sabcccbd'), 'number', DEFAULT_SETTINGS.lineScale, 0.1, 10, 0.1]]);
   const lineHint = document.createElement('p'); lineHint.className = 'hint'; lineHint.textContent = t('settings.s482ccb8'); body.lastElementChild.append(lineHint);
   group(t('settings.s48eafb2'), [['autosave-enabled', t('settings.sf6e185a'), 'checkbox', DEFAULT_SETTINGS.autoSave], ['autosave-seconds', t('settings.s1246e36'), 'number', DEFAULT_SETTINGS.autoSaveSeconds, 1, 3600, 1], ['autosave-limit', t('settings.s51b0b66'), 'number', DEFAULT_SETTINGS.autoSaveLimit, 1, 100, 1]]);
-  const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = t('settings.s1ea74b9'); body.append(hint);
+  const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = t('settings.s1ea74b9'); body.lastElementChild.append(hint);
   group(t('settings.sdb7d8ab'), [['include-backup-charts', t('settings.s1cb72b0'), 'checkbox', false]]);
   const backupHint = document.createElement('p'); backupHint.className = 'hint'; backupHint.textContent = t('settings.s0200377'); body.lastElementChild.append(backupHint);
   group(t('settings.s8afe24b'), [['judgement-color', t('settings.sda91d91'), 'color', '#ffffff']]);
@@ -101,6 +110,7 @@ export function createSettingsPanel({ onLocaleChange = () => {} } = {}) {
   // Detail blocks moved out of index.html; their reset buttons are re-created
   // on every rebuild, so drop the previous ones first.
   for (const section of moved) {
+    section.dataset.settingsCategory = section.classList.contains('compatibility-details') ? 'compatibility' : 'preview';
     for (const button of section.querySelectorAll(':scope > .settings-reset-detail')) button.remove();
     body.append(section);
     const defaults = detailDefaults.get(`.${section.className.split(' ')[0]}`);
@@ -116,14 +126,9 @@ export function createSettingsPanel({ onLocaleChange = () => {} } = {}) {
   const actions = document.createElement('div'); actions.className = 'modal-actions'; actions.append(hotkeys, close); dialog.append(actions);
   }
 
-  function rebuild() {
-    for (const child of [...dialog.children]) if (child !== body) child.remove();
-    body.replaceChildren();
-    build();
-  }
-
   build();
   document.body.append(dialog);
+  navigation = new SettingsNavigation(dialog, body);
   attachRangeValueTooltip(dialog, body);
   return dialog;
 }

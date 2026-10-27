@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, net, protocol, shell, ipcMain, safeStorage } = require('electron');
+const { app, BrowserWindow, dialog, net, protocol, shell, ipcMain, safeStorage, utilityProcess, systemPreferences } = require('electron');
 const { realpath, readFile } = require('node:fs/promises');
 const { mkdirSync } = require('node:fs');
 const { resolve, sep } = require('node:path');
@@ -41,6 +41,12 @@ else {
   app.on('window-all-closed', () => app.quit());
   app.whenReady().then(async () => {
     const root = await realpath(resolve(__dirname, '..'));
+    const { MicrophonePermissions } = await import(pathToFileURL(resolve(root, 'desktop/microphone-permissions.mjs')).href);
+    const microphone = await new MicrophonePermissions(resolve(app.getPath('userData'), 'dictation-microphone.json'), { window: () => mainWindow, origin, systemPreferences, shell }).initialize();
+    const { DictationService, installDictation } = await import(pathToFileURL(resolve(root, 'desktop/dictation.mjs')).href);
+    const dictation = await new DictationService(resolve(app.getPath('userData'), 'dictation.json'), { utilityProcess, fetcher: (...args) => net.fetch(...args), progress: value => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('rpen-dictation-progress', value); } }).initialize();
+    installDictation({ ipcMain, service: dictation, window: () => mainWindow, origin, dialog, shell, microphone });
+    app.on('before-quit', () => dictation.close());
     const { AgentWorkspaceService, installAgentWorkspace } = await import(pathToFileURL(resolve(__dirname, 'agent-workspace.mjs')).href);
     const agentWorkspace = new AgentWorkspaceService(resolve(app.getPath('userData'), 'agent-workspaces'), { fetcher: (...args) => net.fetch(...args), openFolder: async path => { const error = await shell.openPath(path); if (error) throw Error(error); } });
     app.on('before-quit', installAgentWorkspace({ ipcMain, service: agentWorkspace, origin, window: () => mainWindow }));
@@ -169,6 +175,8 @@ else {
       webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, preload: resolve(__dirname, 'preload.cjs'), spellcheck: false, backgroundThrottling: !smoke }
     });
     mainWindow.removeMenu();
+    microphone.install(mainWindow.webContents.session);
+    mainWindow.webContents.on('did-start-loading', () => dictation.closeWorker());
     mainWindow.webContents.on('did-start-loading', cancelAgentNetwork);
     mainWindow.webContents.on('did-start-loading', () => audioSeparation.close());
     mainWindow.webContents.on('did-start-loading', () => audioOnsets.close());
