@@ -58,7 +58,7 @@ test('滚轮起点默认限制到音频零秒，延迟允许有限负拍，关�
   }
 });
 
-test('滚轮步长不随谱面长度变化，保留两分钟基准、倍速、Alt 和连续滚动加速', () => {
+test('滚轮步长不随谱面长度变化，保留两分钟基准、倍速和 Alt', () => {
   for (const duration of [0, 30, 120, 300, 1800]) {
     const audio = { time: 10, duration, rate: 1, pause() {}, seek(seconds) { this.time = seconds; } };
     const playback = new EditorPlayback(audio, { stop() {} }, () => {});
@@ -70,6 +70,44 @@ test('滚轮步长不随谱面长度变化，保留两分钟基准、倍速、Al
   }
   assert.ok(Math.abs(wheelSeconds(100, 120, 5, 1) + 0.06) < 1e-10);
   assert.ok(Math.abs(wheelSeconds(-100, 120, 10, 1) - 0.12) < 1e-10);
+});
+
+test('像素滚动保留惯性衰减和小数尾段，不叠加连续滚动加速', () => {
+  const audio = { time: 10, duration: 120, rate: 1, pause() {}, seek(seconds) { this.time = seconds; } };
+  const playback = new EditorPlayback(audio, { stop() {} }, () => {});
+  const deltas = [-40, -20, -8, -2, -0.25];
+  let previousStep = Infinity;
+  for (const [index, deltaY] of deltas.entries()) {
+    const before = audio.time;
+    playback.wheel({ deltaY, deltaMode: 0 }, { scrollSpeed: 5, scrollAcceleration: true }, 4 + index * 0.016);
+    const step = audio.time - before;
+    assert.ok(Math.abs(step - Math.abs(deltaY) * 0.0006) < 1e-12);
+    assert.ok(step > 0 && step < previousStep); previousStep = step;
+  }
+  assert.ok(Math.abs(audio.time - 10 - 70.25 * 0.0006) < 1e-12);
+  assert.equal(wheelSeconds(-10, 120, 5, 1, true, 4), wheelSeconds(-10, 120, 5, 1));
+  // Equal total OS movement produces equal travel, independent of event frequency.
+  const split = deltas.reduce((sum, delta) => sum + wheelSeconds(delta, 120, 5, 1), 0);
+  assert.ok(Math.abs(split - wheelSeconds(-70.25, 120, 5, 1)) < 1e-12);
+});
+
+test('滚动行页单位传入播放定位，保留非像素模式的连续加速', () => {
+  for (const [deltaMode, deltaY] of [[0, -100], [1, -6.25], [2, -0.125]]) {
+    const audio = { time: 10, duration: 120, rate: 1, pause() {}, seek(seconds) { this.time = seconds; } };
+    const playback = new EditorPlayback(audio, { stop() {} }, () => {});
+    playback.wheel({ deltaY, deltaMode }, { scrollSpeed: 5 }, 0);
+    assert.equal(audio.time, 10.06);
+    const base = wheelSeconds(deltaY, 120, 5, 1, false, 0, false, deltaMode);
+    const accelerated = wheelSeconds(deltaY, 120, 5, 1, true, 4, false, deltaMode);
+    assert.ok(Math.abs(accelerated - base * (deltaMode === 0 ? 1 : 5)) < 1e-12);
+  }
+});
+
+test('横向滚动和无效增量不暂停播放或改变位置', () => {
+  const audio = { time: 10, duration: 120, rate: 1, pause() { assert.fail('unexpected pause'); }, seek() { assert.fail('unexpected seek'); } };
+  const playback = new EditorPlayback(audio, { stop() { assert.fail('unexpected stop'); } }, () => assert.fail('unexpected redraw'));
+  for (const deltaY of [0, NaN, Infinity, undefined]) playback.wheel({ deltaX: 20, deltaY }, { scrollSpeed: 5 }, 0);
+  assert.equal(playback.lastWheel, -Infinity);
 });
 
 test('第二次空格能取消仍在准备的播放，按键重复不会产生隐式恢复', async () => {

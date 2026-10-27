@@ -25,7 +25,12 @@ export function placementRange(first, second) {
   return end - start < 0.001 ? null : { start, end };
 }
 
-export function wheelSeconds(delta, duration, speed, rate, accelerated = false, burstSeconds = 0, alt = false) {
-  const acceleration = accelerated ? 1 + 4 * (Math.min(4, Math.max(0, burstSeconds)) / 4) ** 3 : 1;
-  return -Math.sign(delta) * 120 / 1000000 * speed * rate * (alt ? 500 : 100) * acceleration;
+export function wheelSeconds(delta, duration, speed, rate, accelerated = false, burstSeconds = 0, alt = false, deltaMode = 0) {
+  if (!Number.isFinite(delta)) return 0;
+  // Canvas timelines have no native line/page scroll size; use 16px/line and 800px/page.
+  // Keep 100px equivalent to the previous wheel step, including fractional inertia tails.
+  const pixels = delta * (deltaMode === 1 ? 16 : deltaMode === 2 ? 800 : 1);
+  // Pixel events already carry OS acceleration/inertia. Extra burst acceleration distorts it.
+  const acceleration = accelerated && deltaMode !== 0 ? 1 + 4 * (Math.min(4, Math.max(0, burstSeconds)) / 4) ** 3 : 1;
+  return -pixels / 100 * 120 / 1000000 * speed * rate * (alt ? 500 : 100) * acceleration;
 }

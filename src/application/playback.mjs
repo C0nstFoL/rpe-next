@@ -17,9 +17,12 @@ export class EditorPlayback {
     } finally { if (this.request === request) this.pending = false; }
   }
   wheel(event, settings, now) {
+    const deltaMode = event.deltaMode ?? 0;
+    const deltaY = event.deltaY;
+    if (!Number.isFinite(deltaY) || deltaY === 0) return;
     if (now - this.lastWheel > 0.2) this.burstStart = now;
     this.lastWheel = now;
-    const delta = wheelSeconds(event.deltaY, this.audio.duration, settings.scrollSpeed, this.audio.rate, settings.scrollAcceleration, now - this.burstStart, event.altKey);
+    const delta = wheelSeconds(deltaY, this.audio.duration, settings.scrollSpeed, this.audio.rate, settings.scrollAcceleration, now - this.burstStart, event.altKey, deltaMode);
     const target = this.audio.time + delta;
     this.seek(settings.wheelStopAtAudioStart === false ? target : Math.max(0, target));
   }
