@@ -7,6 +7,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   "lineScale": 1.5,
   "gridCount": 21,
   "scrollSpeed": 5,
+  "wheelInputMode": "mouse",
   "wheelStopAtAudioStart": true,
   "drawEventCurves": true,
   "backgroundAlpha": 0.23529411764705882,

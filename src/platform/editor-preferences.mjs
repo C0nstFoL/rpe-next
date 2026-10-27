@@ -19,6 +19,7 @@ export function normalizeEditorPreferences(value) {
   for (const key of [...flags, 'forceSimpleNoise', 'includeBackupCharts']) if (typeof value[key] === 'boolean') result[key] = value[key];
   if (['compact', 'icons', 'wide'].includes(value.toolbarMode)) result.toolbarMode = value.toolbarMode;
   if (value.analysisMode === 'waveform' || value.analysisMode === 'spectrum') result.analysisMode = value.analysisMode;
+  if (value.wheelInputMode === 'mouse' || value.wheelInputMode === 'trackpad') result.wheelInputMode = value.wheelInputMode;
   return result;
 }
 export function readEditorPreferences(storage = localPreferences) {

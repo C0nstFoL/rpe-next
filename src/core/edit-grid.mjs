@@ -25,7 +25,10 @@ export function placementRange(first, second) {
   return end - start < 0.001 ? null : { start, end };
 }
 
-export function wheelSeconds(delta, duration, speed, rate, accelerated = false, burstSeconds = 0, alt = false) {
-  const acceleration = accelerated ? 1 + 4 * (Math.min(4, Math.max(0, burstSeconds)) / 4) ** 3 : 1;
-  return -Math.sign(delta) * 120 / 1000000 * speed * rate * (alt ? 500 : 100) * acceleration;
+export function wheelSeconds(delta, duration, speed, rate, accelerated = false, burstSeconds = 0, alt = false, deltaMode = 0, inputMode = 'mouse') {
+  if (!Number.isFinite(delta) || delta === 0) return 0;
+  const trackpad = inputMode === 'trackpad';
+  const movement = trackpad ? delta * (deltaMode === 1 ? 16 : deltaMode === 2 ? 800 : 1) / 100 : Math.sign(delta);
+  const acceleration = accelerated && !trackpad ? 1 + 4 * (Math.min(4, Math.max(0, burstSeconds)) / 4) ** 3 : 1;
+  return -movement * 120 / 1000000 * speed * rate * (alt ? 500 : 100) * acceleration;
 }

@@ -17,9 +17,12 @@ export class EditorPlayback {
     } finally { if (this.request === request) this.pending = false; }
   }
   wheel(event, settings, now) {
-    if (now - this.lastWheel > 0.2) this.burstStart = now;
+    if (!Number.isFinite(event.deltaY) || event.deltaY === 0) return;
+    const inputMode = settings.wheelInputMode === 'trackpad' ? 'trackpad' : 'mouse';
+    if (now - this.lastWheel > 0.2 || this.wheelInputMode !== inputMode) this.burstStart = now;
+    this.wheelInputMode = inputMode;
     this.lastWheel = now;
-    const delta = wheelSeconds(event.deltaY, this.audio.duration, settings.scrollSpeed, this.audio.rate, settings.scrollAcceleration, now - this.burstStart, event.altKey);
+    const delta = wheelSeconds(event.deltaY, this.audio.duration, settings.scrollSpeed, this.audio.rate, settings.scrollAcceleration, now - this.burstStart, event.altKey, event.deltaMode ?? 0, inputMode);
     const target = this.audio.time + delta;
     this.seek(settings.wheelStopAtAudioStart === false ? target : Math.max(0, target));
   }

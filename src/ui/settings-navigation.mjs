@@ -88,7 +88,7 @@ export class SettingsNavigation {
     if (wanted !== this.lastFilter) { this.destination = null; this.body.scrollTop = 0; this.lastFilter = wanted; }
     this.schedule();
   }
-  go(category, animate = true) {
+  go(category, animate = false) {
     const group = this.groups.get(category); if (!group || group.section.hidden) return;
     const bounds = this.body.getBoundingClientRect(), target = group.section.getBoundingClientRect();
     const top = Math.max(0, Math.min(this.body.scrollHeight - this.body.clientHeight, this.body.scrollTop + target.top - bounds.top - 24));

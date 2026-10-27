@@ -42,6 +42,7 @@ export function migratePreferences(settingsText = '{}', hotkeyText = '', uiText 
       lineScale: finiteRange(originalSettings.LineScale, 0.1, 10, DEFAULT_SETTINGS.lineScale),
       gridCount: finiteRange(originalSettings.GridlineCount, 2, 100, DEFAULT_SETTINGS.gridCount),
       scrollSpeed: finiteRange(originalSettings.ScrollSpeed, 0.1, 100, DEFAULT_SETTINGS.scrollSpeed),
+      wheelInputMode: DEFAULT_SETTINGS.wheelInputMode,
       wheelStopAtAudioStart: true,
       drawEventCurves: true,
       backgroundAlpha: finiteRange(originalSettings.Alpha, 0, 255, DEFAULT_SETTINGS.backgroundAlpha * 255) / 255,

@@ -72,6 +72,86 @@ test('滚轮步长不随谱面长度变化，保留两分钟基准、倍速、Al
   assert.ok(Math.abs(wheelSeconds(-100, 120, 10, 1) - 0.12) < 1e-10);
 });
 
+test('鼠标模式逐项保留原有固定步长、速度、倍率、Alt 和连续加速，不凭像素单位切换行为', () => {
+  const original = (delta, speed, rate, accelerated, seconds, alt) => -Math.sign(delta) * 120 / 1000000 * speed * rate * (alt ? 500 : 100) * (accelerated ? 1 + 4 * (Math.min(4, Math.max(0, seconds)) / 4) ** 3 : 1);
+  for (const delta of [-800, -120, -100, -3, -0.25, 0.25, 3, 100, 120, 800]) {
+    for (const deltaMode of [0, 1, 2]) for (const speed of [0.1, 5, 100]) for (const rate of [0.5, 1, 2]) for (const accelerated of [false, true]) for (const alt of [false, true]) for (const seconds of [0, 2, 4, 6]) {
+      const expected = original(delta, speed, rate, accelerated, seconds, alt);
+      assert.equal(wheelSeconds(delta, 120, speed, rate, accelerated, seconds, alt, deltaMode), expected);
+      assert.equal(wheelSeconds(delta, 120, speed, rate, accelerated, seconds, alt, deltaMode, 'mouse'), expected);
+    }
+  }
+  const audio = { time: 10, duration: 120, rate: 1, pause() {}, seek(seconds) { this.time = seconds; } };
+  const playback = new EditorPlayback(audio, { stop() {} }, () => {});
+  for (let index = 0; index <= 40; index++) playback.wheel({ deltaY: -120, deltaMode: 0 }, { scrollSpeed: 5, scrollAcceleration: true }, index / 10);
+  const before = audio.time;
+  playback.wheel({ deltaY: -120, deltaMode: 0 }, { scrollSpeed: 5, scrollAcceleration: true }, 4.1);
+  assert.ok(Math.abs(audio.time - before - 0.3) < 1e-12);
+  assert.equal(wheelSeconds(-40, 120, 5, 1, true, 4, false, 0, 'unknown'), wheelSeconds(-40, 120, 5, 1, true, 4));
+});
+
+test('触控板模式保留实际增量、小数惯性尾段及事件拆分一致性，不叠加连续加速', () => {
+  const audio = { time: 10, duration: 120, rate: 1, pause() {}, seek(seconds) { this.time = seconds; } };
+  const playback = new EditorPlayback(audio, { stop() {} }, () => {});
+  const deltas = [-40, -20, -8, -2, -0.25];
+  let previous = Infinity;
+  for (const [index, deltaY] of deltas.entries()) {
+    const before = audio.time;
+    playback.wheel({ deltaY, deltaMode: 0 }, { scrollSpeed: 5, scrollAcceleration: true, wheelInputMode: 'trackpad' }, 4 + index * 0.016);
+    const step = audio.time - before;
+    assert.ok(step > 0 && step < previous); previous = step;
+    assert.ok(Math.abs(step - Math.abs(deltaY) * 0.0006) < 1e-12);
+  }
+  const whole = wheelSeconds(-70.25, 120, 5, 1, false, 0, false, 0, 'trackpad');
+  assert.ok(Math.abs(audio.time - 10 - whole) < 1e-12);
+  assert.equal(wheelSeconds(-40, 120, 5, 1, true, 4, false, 0, 'trackpad'), wheelSeconds(-40, 120, 5, 1, false, 0, false, 0, 'trackpad'));
+});
+
+test('触控板模式换算像素、行、页单位，保留速度、倍速、Alt 和音频起点限制', () => {
+  for (const [deltaMode, deltaY] of [[0, -100], [1, -6.25], [2, -0.125]]) {
+    for (const duration of [0, 30, 120, 300, 1800]) for (const rate of [0.5, 1, 2]) for (const altKey of [false, true]) {
+      const audio = { time: 10, duration, rate, pause() {}, seek(seconds) { this.time = seconds; } };
+      const playback = new EditorPlayback(audio, { stop() {} }, () => {});
+      playback.wheel({ deltaY, deltaMode, altKey }, { scrollSpeed: 5, wheelInputMode: 'trackpad', scrollAcceleration: true }, 0);
+      assert.ok(Math.abs(audio.time - 10 - 0.06 * rate * (altKey ? 5 : 1)) < 1e-12);
+      audio.time = 0.01; playback.wheel({ deltaY: -deltaY, deltaMode }, { scrollSpeed: 5, wheelInputMode: 'trackpad' }, 1); assert.equal(audio.time, 0);
+      playback.wheel({ deltaY: -deltaY, deltaMode }, { scrollSpeed: 5, wheelInputMode: 'trackpad', wheelStopAtAudioStart: false }, 2); assert.ok(audio.time < 0);
+    }
+  }
+});
+
+test('零增量、纯横向和无效滚动不暂停播放或改变定位状态', () => {
+  for (const wheelInputMode of ['mouse', 'trackpad']) {
+    const audio = { time: 10, duration: 120, rate: 1, pause() { assert.fail('unexpected pause'); }, seek() { assert.fail('unexpected seek'); } };
+    const playback = new EditorPlayback(audio, { stop() { assert.fail('unexpected stop'); } }, () => assert.fail('unexpected redraw'));
+    for (const deltaY of [0, NaN, Infinity, -Infinity, undefined]) playback.wheel({ deltaX: 20, deltaY }, { scrollSpeed: 5, wheelInputMode }, 0);
+    assert.equal(playback.lastWheel, -Infinity);
+    assert.equal(playback.request, 0);
+  }
+});
+
+test('滚动模式切换立即生效并重置连续加速，选项仅允许明确支持值且跨重载保存', () => {
+  assert.equal(migratePreferences().settings.wheelInputMode, 'mouse');
+  let stored;
+  const storage = { getItem() { return stored; }, setItem(key, value) { stored = value; } };
+  for (const wheelInputMode of ['mouse', 'trackpad']) {
+    writeEditorPreferences({ wheelInputMode }, storage);
+    assert.deepEqual(readEditorPreferences(storage), { wheelInputMode });
+  }
+  for (const wheelInputMode of ['auto', '', 'trackPad', null, 1]) {
+    writeEditorPreferences({ wheelInputMode }, storage); assert.deepEqual(readEditorPreferences(storage), {});
+  }
+  const audio = { time: 10, duration: 120, rate: 1, pause() {}, seek(seconds) { this.time = seconds; } };
+  const playback = new EditorPlayback(audio, { stop() {} }, () => {});
+  for (let index = 0; index <= 40; index++) playback.wheel({ deltaY: -100 }, { scrollSpeed: 5, scrollAcceleration: true }, index / 10);
+  let before = audio.time;
+  playback.wheel({ deltaY: -20, deltaMode: 0 }, { scrollSpeed: 5, scrollAcceleration: true, wheelInputMode: 'trackpad' }, 4.1);
+  assert.ok(Math.abs(audio.time - before - 0.012) < 1e-12);
+  before = audio.time;
+  playback.wheel({ deltaY: -20, deltaMode: 0 }, { scrollSpeed: 5, scrollAcceleration: true, wheelInputMode: 'mouse' }, 4.15);
+  assert.ok(Math.abs(audio.time - before - 0.06) < 1e-12);
+});
+
 test('第二次空格能取消仍在准备的播放，按键重复不会产生隐式恢复', async () => {
   let ready;
   const audio = { playing: false, pause() { this.playing = false; }, async play() { this.playing = true; } };

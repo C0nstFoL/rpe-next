@@ -139,6 +139,7 @@ const displayFields = [
   ['paired-movement-sampling', 'pairedMovementSampling', true],
   ['note-size', 'noteSize', 200],
   ['wheel-limit-audio-start', 'wheelStopAtAudioStart', true],
+  ['wheel-input-mode', 'wheelInputMode', DEFAULT_SETTINGS.wheelInputMode],
   ['hit-tap-delay', 'hitTapDelay', DEFAULT_EDITOR_PREFERENCES.hitTapDelay], ['hit-drag-delay', 'hitDragDelay', DEFAULT_EDITOR_PREFERENCES.hitDragDelay], ['hit-flick-delay', 'hitFlickDelay', DEFAULT_EDITOR_PREFERENCES.hitFlickDelay],
   ['draw-event-curves', 'drawEventCurves', true],
   ['pick-preview-noise-areas', 'pickPreviewNoiseAreas', true],
@@ -610,7 +611,7 @@ function selectOverviewLine(index) {
 }
 const previewWheel = event => {
   event.preventDefault();
-  playback.wheel(event, { ...preferences.settings, scrollSpeed: editorPreferences.scrollSpeed ?? preferences.settings.scrollSpeed, wheelStopAtAudioStart: editorPreferences.wheelStopAtAudioStart ?? preferences.settings.wheelStopAtAudioStart ?? true }, performance.now() / 1000);
+  playback.wheel(event, { ...preferences.settings, scrollSpeed: editorPreferences.scrollSpeed ?? preferences.settings.scrollSpeed, wheelInputMode: editorPreferences.wheelInputMode ?? preferences.settings.wheelInputMode, wheelStopAtAudioStart: editorPreferences.wheelStopAtAudioStart ?? preferences.settings.wheelStopAtAudioStart ?? true }, performance.now() / 1000);
 };
 element('.preview-wrap').addEventListener('wheel', previewWheel, { passive: false });
 const pickPreviewLine = (renderer, event) => {
@@ -2177,9 +2178,10 @@ document.addEventListener('dragstart', event => {
 }, true);
 element('#fps-limit').addEventListener('input', applyFpsLimit);
 element('#fps-unlimited').addEventListener('change', applyFpsLimit);
-for (const [id, key] of displayFields.filter(([, key]) => key !== 'selectionInterval')) element(`#${id}`).addEventListener(element(`#${id}`).type === 'number' ? 'change' : 'input', event => {
+for (const [id, key] of displayFields.filter(([, key]) => key !== 'selectionInterval')) element(`#${id}`).addEventListener(['number', 'select-one'].includes(element(`#${id}`).type) ? 'change' : 'input', event => {
   const control = event.target;
   if (control.type === 'checkbox') editorPreferences[key] = control.checked;
+  else if (control.tagName === 'SELECT' && [...control.options].some(option => option.value === control.value)) editorPreferences[key] = control.value;
   else if (control.type === 'color') editorPreferences[key] = control.value;
   else if (control.value.trim() && control.validity.valid && Number.isFinite(Number(control.value))) editorPreferences[key] = Number(control.value);
   else return;
