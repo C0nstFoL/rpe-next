@@ -1,10 +1,10 @@
 import { SceneRuntime } from '../core/scene.mjs';
 import { prepareCanvas, NOTE_COLORS } from './timeline.mjs';
 import { DEFAULT_LINE_WIDTH, DEFAULT_LINE_HEIGHT, HIT_DURATION, hitFrame } from '../core/visual-constants.mjs';
-import { previewViewport, previewPositionScale, previewNotePosition, simultaneousNotes, hitParticles, overflowTextureSize } from '../core/editor-display.mjs';
+import { previewViewport, previewDefaultFrame, previewPositionScale, previewNotePosition, simultaneousNotes, hitParticles, overflowTextureSize } from '../core/editor-display.mjs';
 import { renderPasses } from '../core/game-ui.mjs';
 import { drawGameUi } from './game-ui.mjs';
-import { recentHits } from '../core/hit-effects.mjs';
+import { recentHits, HitGeometryCache } from '../core/hit-effects.mjs';
 import { lineGuides, mergeGuides, pickGuide, formatLineNumbers } from '../core/preview-guides.mjs';
 import { ShaderRuntime } from '../core/shader.mjs';
 import { ShaderPipeline } from './shader-pipeline.mjs';
@@ -12,6 +12,7 @@ import { PreviewBackground, textureInViewport } from './preview-background.mjs';
 import { NoisePreview } from './noise-preview.mjs';
 import { noiseRenderingLayers } from '../core/noise-skin.mjs';
 import { DEFAULT_EDITOR_PREFERENCES } from '../core/default-settings.mjs';
+import { HitEffectBatch } from './hit-effect-batch.mjs';
 
 const clamp = value => Math.max(0, Math.min(1, value));
 
@@ -22,6 +23,8 @@ export class Preview {
     this.noisePreview = new NoisePreview();
     this.allLines = true; this.visible = false; this.noteSize = 175; this.lineScale = 1.5; this.backgroundAlpha = 0.35; this.backgroundBlur = 10.5; this.effectsSince = Infinity; this.applyShaders = true; this.opacity = 1; this.showHitEffects = true;
     this.noteHitAreas = [];
+    this.hitGeometry = new HitGeometryCache();
+    this.hitBatch = new HitEffectBatch();
     this.viewportOverflow = DEFAULT_EDITOR_PREFERENCES.viewportOverflow;
     this.overflowBlur = DEFAULT_EDITOR_PREFERENCES.overflowBlur;
     this.overflowDarken = DEFAULT_EDITOR_PREFERENCES.overflowDarken;
@@ -114,16 +117,25 @@ export class Preview {
     const shaderRendered = renderShaders(globalEffects, true);
     if (integratedOverflow) { this.overflowReady = false; this.overflowCompositor = null; }
     else this.drawViewportOverflow(context, chart, tempo, seconds, selectedLine, overflowFrame);
-    if (shaderRendered && this.overlayCanvas && this.overflowReady && !this.overflowCompositor) {
+    const defaultFrame = previewDefaultFrame(viewport, divisor);
+    const overflowOverlay = this.overflowReady && !this.overflowCompositor;
+    if (shaderRendered && this.overlayCanvas && (overflowOverlay || defaultFrame)) {
       const overlay = prepareCanvas(this.overlayCanvas, rectangle).context;
-      this.compositeViewportOverflow(overlay, overflowFrame);
-    }
+      if (overflowOverlay) this.compositeViewportOverflow(overlay, overflowFrame);
+      this.drawDefaultFrame(overlay, defaultFrame);
+    } else if (!shaderRendered) this.drawDefaultFrame(context, defaultFrame);
     if (this.shaderCanvas) this.shaderCanvas.style.visibility = shaderRendered ? 'visible' : 'hidden';
-    if (this.overlayCanvas) this.overlayCanvas.style.visibility = shaderRendered && this.overflowReady && !this.overflowCompositor ? 'visible' : 'hidden';
+    if (this.overlayCanvas) this.overlayCanvas.style.visibility = shaderRendered && (overflowOverlay || defaultFrame) ? 'visible' : 'hidden';
     this.updateOverflowLayer(overflowFrame);
     if (this.canvas.style) this.canvas.style.opacity = shaderRendered ? '0' : String(clamp(this.opacity));
     for (const layer of [this.shaderCanvas, this.overlayCanvas]) if (layer) layer.style.opacity = String(clamp(this.opacity));
     this.images?.trim?.();
+  }
+
+  drawDefaultFrame(context, frame) {
+    if (!frame) return;
+    context.save(); context.globalAlpha = 1; context.globalCompositeOperation = 'source-over'; context.strokeStyle = '#ffffff'; context.lineWidth = 1; context.setLineDash([]);
+    context.strokeRect(frame.left, frame.top, frame.width, frame.height); context.restore();
   }
 
   drawViewportOverflow(context, chart, tempo, seconds, selectedLine, frame) {
@@ -393,33 +405,46 @@ export class Preview {
       }
       context.restore();
     }
-    if (this.showHitEffects) {
+    if (this.showHitEffects) this.drawHits(context, seconds, order, originX, originY, scale, positionScale, renderViewport, width, height);
+  }
+
+  drawHits(context, seconds, order, originX, originY, scale, positionScale, renderViewport, width, height, allowBatch = true) {
+    const buckets = order.map(index => [index, this.scene.lines[index] ? recentHits(this.scene.lines[index], seconds, this.effectsSince, this.skin?.hitLifetime ?? Math.max(HIT_DURATION, 2 / 3)) : []]);
+    const target = allowBatch && this.skin?.hitBatchCompatible && buckets.reduce((total, bucket) => total + bucket[1].length, 0) > 128 ? this.hitBatch.begin(context, width, height, this.skin) ?? context : context;
+    try {
       const hitStates = new Map();
-      for (const index of order) {
+      this.hitGeometry.begin(this.scene, positionScale);
+      for (const [index, hits] of buckets) {
         const runtime = this.scene.lines[index];
         if (!runtime) continue;
-        for (const hit of recentHits(runtime, seconds, this.effectsSince, this.skin?.hitLifetime ?? Math.max(HIT_DURATION, 2 / 3))) {
+        for (const hit of hits) {
           const { entry, time, seed } = hit;
-          if (!hitStates.has(time)) hitStates.set(time, this.scene.sampler(time, positionScale));
-          const state = hitStates.get(time)(index);
-          const position = previewNotePosition(runtime.noteState(entry, state, time), runtime.line, positionScale);
-          const angle = state.rotation * Math.PI / 180;
-          const horizontal = originX + (state.x + position.x * Math.cos(angle) + position.y * Math.sin(angle)) * scale;
-          const vertical = originY + (-state.y + position.x * Math.sin(angle) - position.y * Math.cos(angle)) * scale;
+          const geometry = this.hitGeometry.sample(entry, time, () => {
+            if (!hitStates.has(time)) hitStates.set(time, this.scene.sampler(time, positionScale));
+            const state = hitStates.get(time)(index), position = previewNotePosition(runtime.noteState(entry, state, time), runtime.line, positionScale), angle = state.rotation * Math.PI / 180;
+            return { x: state.x + position.x * Math.cos(angle) + position.y * Math.sin(angle), y: -state.y + position.x * Math.sin(angle) - position.y * Math.cos(angle), angle };
+          });
+          const horizontal = originX + geometry.x * scale, vertical = originY + geometry.y * scale, angle = geometry.angle;
           const size = this.noteSize * 1.4 * scale;
-          if (cullNotes && (horizontal + size * 2 < viewport.left || horizontal - size * 2 > viewport.left + viewport.width || vertical + size * 2 < viewport.top || vertical - size * 2 > viewport.top + viewport.height)) continue;
-          if (this.skin?.drawHit?.(context, { age: seconds-time, x: horizontal, y: vertical, size, rotation: angle, color:entry.note.tintHitEffects, seed:index*65537+seed })) continue;
+          const radius = this.skin?.hitRadius?.(size) ?? (this.skin?.drawHit ? Infinity : size * 2);
+          if (horizontal + radius < renderViewport.left || horizontal - radius > renderViewport.left + renderViewport.width || vertical + radius < renderViewport.top || vertical - radius > renderViewport.top + renderViewport.height) continue;
+          if (this.skin?.drawHit?.(target, { age: seconds-time, x: horizontal, y: vertical, size, rotation: angle, color:entry.note.tintHitEffects, seed:index*65537+seed })) continue;
           const frame = hitFrame(seconds - time);
           const picture = frame === null ? null : this.skin?.tinted(`img-${frame}`, entry.note.tintHitEffects ?? [255, 236, 160]);
-          if (picture) context.drawImage(picture, horizontal - size / 2, vertical - size / 2, size, size);
-          context.fillStyle = `rgb(${(entry.note.tintHitEffects ?? [255, 236, 160]).join(',')})`;
+          if (picture) target.drawImage(picture, horizontal - size / 2, vertical - size / 2, size, size);
+          target.fillStyle = `rgb(${(entry.note.tintHitEffects ?? [255, 236, 160]).join(',')})`;
           for (const particle of hitParticles(seconds - time, index * 65537 + seed, this.noteSize * scale)) {
-            context.globalAlpha = particle.alpha;
-            context.fillRect(horizontal + particle.x - particle.radius, vertical + particle.y - particle.radius, particle.radius * 2, particle.radius * 2);
+            target.globalAlpha = particle.alpha;
+            target.fillRect(horizontal + particle.x - particle.radius, vertical + particle.y - particle.radius, particle.radius * 2, particle.radius * 2);
           }
-          context.globalAlpha = 1;
+          target.globalAlpha = 1;
         }
       }
+      this.hitGeometry.end();
+      if (target !== context && !this.hitBatch.end()) this.drawHits(context, seconds, order, originX, originY, scale, positionScale, renderViewport, width, height, false);
+    } catch (error) {
+      if (target === context) throw error;
+      this.hitBatch.failed = true; this.drawHits(context, seconds, order, originX, originY, scale, positionScale, renderViewport, width, height, false);
     }
   }
 

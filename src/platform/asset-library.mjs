@@ -17,8 +17,16 @@ export function remapAssetReferences(chart, before, after, paths, chartName = ''
   let changed = false;
   const lines = chart.judgeLineList.map(line => {
     const texture = reference(line.Texture);
-    if (texture === line.Texture) return line;
-    changed = true; return { ...line, Texture: texture };
+    let notesChanged = false;
+    const notes = line.notes?.map(note => {
+      let next = note;
+      for (const key of ['hitsound', 'hitSound']) if (typeof note[key] === 'string') {
+        const sound = reference(note[key]); if (sound !== note[key]) { next = { ...next, [key]: sound }; notesChanged = true; }
+      }
+      return next;
+    });
+    if (texture === line.Texture && !notesChanged) return line;
+    changed = true; return { ...line, Texture: texture, ...(notesChanged ? { notes } : {}) };
   });
   const sources = resourceReferences(chart, before, chartName), meta = { ...chart.META };
   for (const key of ['background', 'song']) {

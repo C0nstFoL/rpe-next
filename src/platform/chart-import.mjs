@@ -1,4 +1,4 @@
-import { openFiles } from './files.mjs';
+import { openFiles, resourceReferences } from './files.mjs';
 import { t } from '../i18n.mjs';
 
 const accepts = { pez: '.pez,.zip', json: '.json,.pec', music: 'audio/*', cover: 'image/*', separate: '' };
@@ -80,10 +80,11 @@ export function chartImportFiles(mode, selected) {
 export async function readChartImport(mode, selected, options) {
   const loaded = await openFiles(chartImportFiles(mode, selected), options);
   if (mode === 'separate') {
-    for (const candidate of loaded.candidates) candidate.chart = {
-      ...candidate.chart,
-      META: { ...candidate.chart.META, ...(selected.music && !selected.automatic?.music ? { song: selected.music.name } : {}), ...(selected.cover && !selected.automatic?.cover ? { background: selected.cover.name } : {}) },
-    };
+    for (const candidate of loaded.candidates) {
+      const references = resourceReferences(candidate.chart, loaded.assets, candidate.name, {}, { inferEmpty: true });
+      candidate.chart = { ...candidate.chart, META: { ...candidate.chart.META, ...references,
+        ...(selected.music && !selected.automatic?.music ? { song: selected.music.name } : {}), ...(selected.cover && !selected.automatic?.cover ? { background: selected.cover.name } : {}) } };
+    }
   }
   return loaded;
 }

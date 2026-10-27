@@ -36,7 +36,7 @@ contextBridge.exposeInMainWorld('rpenAgentCredentials', {
   write: (provider, key) => ipcRenderer.invoke('rpen-agent-credentials', { action: 'write', provider, key }),
 });
 contextBridge.exposeInMainWorld('rpenAgentNetwork', {
-  request: (id, path, key, body) => ipcRenderer.invoke('rpen-agent-request', { id, path, key, body }),
+  request: (id, path, key, body, options) => ipcRenderer.invoke('rpen-agent-request', { id, path, key, body, baseUrl: options?.baseUrl }),
   cancel: id => ipcRenderer.send('rpen-agent-cancel', id),
   onChunk: (id, callback) => {
     const handler = (event, value) => { if (value.id === id) callback(value.chunk); };

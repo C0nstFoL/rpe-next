@@ -3,11 +3,20 @@ import assert from 'node:assert/strict';
 import { createChart, createLine, createEvent, createNote } from '../src/core/chart.mjs';
 import { TempoMap } from '../src/core/tempo.mjs';
 import { SceneRuntime } from '../src/core/scene.mjs';
-import { previewViewport, previewPositionScale, previewNoiseGeometry } from '../src/core/editor-display.mjs';
+import { previewViewport, previewDefaultFrame, previewPositionScale, previewNoiseGeometry } from '../src/core/editor-display.mjs';
 import { createNoiseArea, createNoiseEvent, noiseRuntime } from '../src/core/noise-areas.mjs';
 import { Preview } from '../src/ui/preview.mjs';
 
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-7, `${actual} != ${expected}`);
+
+test('默认视野框仅在缩放大于1时显示，随比例居中缩放但不改变坐标语义', () => {
+  for (const ratio of [1.5, 16 / 9, 4 / 3, 9 / 16]) {
+    const view = previewViewport(1200, 800, ratio);
+    assert.equal(previewDefaultFrame(view, 1), null); assert.equal(previewDefaultFrame(view, 0.5), null);
+    const frame = previewDefaultFrame(view, 2);
+    near(frame.width, view.width / 2); near(frame.height, view.height / 2); near(frame.left + frame.width / 2, 600); near(frame.top + frame.height / 2, 400);
+  }
+});
 function renderer() {
   const calls = [];
   const context = new Proxy({ calls }, { get: (target, key) => key in target ? target[key] : (...args) => calls.push({ key, args }) });

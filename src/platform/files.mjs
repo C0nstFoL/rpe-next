@@ -36,7 +36,7 @@ export async function openFiles(fileList, { confirmLargeArchive, includeBackupCh
   if (!candidates.length) throw new Error(errors.join('\n') || t('files.s347b063'));
   attachExternalEffects(candidates, assets);
   for (const candidate of candidates) if (candidate.chart.rpeNextLegacySource?.format === 'phigros-v3') {
-    const references = resourceReferences(candidate.chart, assets, candidate.name);
+    const references = resourceReferences(candidate.chart, assets, candidate.name, {}, { inferEmpty: true });
     candidate.chart.META = { ...candidate.chart.META, name: candidate.name.replaceAll('\\', '/').split('/').at(-1).replace(/\.json$/i, ''), ...references };
   }
   return { candidates, assets };
@@ -178,7 +178,7 @@ function primaryInfo(assets, chartName) {
   return matches.find(([name]) => name.toLowerCase() === 'info.txt') ?? (matches.length === 1 ? matches[0] : null);
 }
 
-export function resourceReferences(chart, assets, chartName, fallback = {}) {
+export function resourceReferences(chart, assets, chartName, fallback = {}, { inferEmpty = false } = {}) {
   const match = primaryInfo(assets, chartName);
   const info = match ? parseInfo(decodeLegacy(match[1])) : fallback;
   const normalizedChart = normalizePath(chartName);
@@ -190,14 +190,26 @@ export function resourceReferences(chart, assets, chartName, fallback = {}) {
     const infoDirectory = match[0].replaceAll('\\', '/').split('/').slice(0, -1).join('/');
     return normalizePath(infoDirectory) === directory ? value : (infoDirectory ? infoDirectory + '/' : '') + value;
   };
-  const infer = extensions => {
-    const candidates = [...assets.keys()].filter(name => extensions.test(name) && normalizePath(name).split('/').slice(0, -1).join('/') === directory);
+  let noteSounds;
+  const infer = (extensions, excludeSounds = false) => {
+    if (excludeSounds && !noteSounds) {
+      const references = new Set();
+      for (const line of chart.judgeLineList ?? []) for (const note of line.notes ?? []) for (const name of [note.hitsound, note.hitSound]) if (name) references.add(name);
+      noteSounds = new Set([...references].map(name => assetPath(assets, name, chartName)).filter(Boolean));
+    }
+    const candidates = [...assets.keys()].filter(name => extensions.test(name) && (!excludeSounds || !noteSounds.has(name)) && normalizePath(name).split('/').slice(0, -1).join('/') === directory);
     const sameStem = candidates.filter(name => normalizePath(name).split('/').at(-1).replace(/\.[^.]+$/, '') === stem);
     return sameStem.length === 1 ? sameStem[0] : candidates.length === 1 ? candidates[0] : '';
   };
-  const resolve = (names, extensions) => names.find(name => name && assetBytes(assets, name, chartName)) || infer(extensions) || names.find(Boolean) || '';
-  return { song: resolve([chart.META.song, infoReference('Song')], /\.(mp3|ogg|wav|flac|m4a|aac|opus|webm)$/i),
-    background: resolve([chart.META.background, infoReference('Picture')], /\.(png|jpe?g|webp|gif|bmp|avif)$/i) };
+  const resolve = (key, infoKey, extensions, excludeSounds = false) => {
+    const names = [chart.META[key], infoReference(infoKey)];
+    const explicit = names.find(name => name && assetBytes(assets, name, chartName)) || names.find(Boolean);
+    if (explicit) return explicit;
+    if (Object.hasOwn(info, infoKey) || !inferEmpty && Object.hasOwn(chart.META, key)) return '';
+    return infer(extensions, excludeSounds);
+  };
+  return { song: resolve('song', 'Song', /\.(mp3|ogg|wav|flac|m4a|aac|opus|webm)$/i, true),
+    background: resolve('background', 'Picture', /\.(png|jpe?g|webp|gif|bmp|avif)$/i) };
 }
 
 export function mediaType(name) {

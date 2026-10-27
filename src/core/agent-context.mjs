@@ -26,12 +26,12 @@ export function agentContextUsage(tokens, policy, estimated = true) {
 export function agentContextSignature(config, context) {
   let fingerprint = 2166136261;
   for (const character of config.prompt ?? '') fingerprint = Math.imul(fingerprint ^ character.charCodeAt(0), 16777619);
-  return JSON.stringify([config.provider, config.model, config.permission, fingerprint >>> 0, context]);
+  return JSON.stringify([config.provider, config.baseUrl, config.model, config.permission, fingerprint >>> 0, context]);
 }
 
 export function prepareAgentHistory(messages, { preserveToolReasoning = true } = {}) {
   return structuredClone(messages).map(message => {
-    if (!preserveToolReasoning || !message.tool_calls?.length) delete message.reasoning_content;
+    if (!preserveToolReasoning || !message.tool_calls?.length) { delete message.reasoning_content; delete message.reasoning_details; }
     if (message.role === 'tool' && typeof message.content === 'string' && message.content.length > 16000) message.content = message.content.slice(0, 12000) + t('agent-context.s6268ab4');
     return message;
   });

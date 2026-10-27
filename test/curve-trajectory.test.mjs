@@ -149,6 +149,7 @@ test('优化默认开启、可关闭或调整容忍度，拟合保持 BPM 和首
 
 test('统一导出的四种组合保存正确格式，PEZ 保留资源并同步 extra', async () => {
   const source = trajectoryChart(createChart(), 0, 0, make({ ...circle, tangentRotation: true }));
+  Object.assign(source.META, { song: 'music.ogg', background: 'image.png' });
   source.chartTime = 99; source.effects = [{ shader: 'glitch', start: 0, end: 2 }];
   const bytes = new Uint8Array([1, 2, 3]);
   const assets = new Map([['project/chart.json', new TextEncoder().encode('{}')], ['project/music.ogg', bytes], ['project/image.png', bytes]]);

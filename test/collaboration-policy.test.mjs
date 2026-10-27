@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { collaborationConnectSources } from '../src/core/collaboration-policy.mjs';
 
-test('默认 HTTP 权限仅允许本机和 Cloudflare 临时隧道的素材接口', () => {
+test('自定义AI接口允许HTTPS和本机HTTP，不开放任意HTTP源', () => {
   const sources = collaborationConnectSources().split(' ');
-  assert.ok(!sources.includes('http:') && !sources.includes('https:') && !sources.includes('*'));
-  assert.ok(sources.includes('https://*.trycloudflare.com/collab/media/'));
-  assert.ok(sources.includes('http://127.0.0.1:*/collab/media/'));
+  assert.ok(!sources.includes('http:') && !sources.includes('*'));
+  assert.ok(sources.includes('https:'));
+  assert.ok(sources.includes('http://127.0.0.1:*'));
 });
 
 test('固定服务器白名单仅接收明确源地址，并限制在素材接口路径', () => {

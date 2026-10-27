@@ -108,7 +108,7 @@ export function createSettingsPanel({ onLocaleChange = () => {} } = {}) {
   const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = t('settings.s1ea74b9'); body.lastElementChild.append(hint);
   group(t('settings.sdb7d8ab'), [['include-backup-charts', t('settings.s1cb72b0'), 'checkbox', false]]);
   const backupHint = document.createElement('p'); backupHint.className = 'hint'; backupHint.textContent = t('settings.s0200377'); body.lastElementChild.append(backupHint);
-  group(t('settings.s8afe24b'), [['judgement-color', t('settings.sda91d91'), 'color', '#ffffff']]);
+  group(t('settings.s8afe24b'), [['judgement-color', t('settings.sda91d91'), 'color', '#ffffff'], ['judgement-width', t('settings.judgementWidth'), 'range', DEFAULT_EDITOR_PREFERENCES.judgementWidth, 0.5, 12, 0.25], ['judgement-alpha', t('settings.judgementAlpha'), 'range', DEFAULT_EDITOR_PREFERENCES.judgementAlpha, 0, 1, 0.01]]);
 
   // Detail blocks moved out of index.html; their reset buttons are re-created
   // on every rebuild, so drop the previous ones first.

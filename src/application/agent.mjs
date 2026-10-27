@@ -25,7 +25,7 @@ export class EditorAgent extends EventTarget {
     let messages = prepareAgentHistory(history ?? this.messages), transcript = [], checkpoint = structuredClone(messages), checkpointTranscript = [], compacted = false;
     if (!compactOnly) { const user = { role: 'user', content: text }; messages.push(user); transcript.push(user); checkpoint = structuredClone(messages); checkpointTranscript = structuredClone(transcript); }
     this.turnMessages = checkpointTranscript;
-    const statistics = { model: config.model, provider: provider.name ?? config.provider, startedAt: Date.now(), durationMs: 0, requestMs: 0, requests: 0, tools: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, reasoningTokens: 0, cachedTokens: 0, usageKnown: false, compactions: 0 };
+    const statistics = { model: config.model, provider: provider.name ?? config.provider, profile: config.profileName, reasoningEffort: config.thinking === false ? 'none' : config.reasoningEffort, startedAt: Date.now(), durationMs: 0, requestMs: 0, requests: 0, tools: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, reasoningTokens: 0, cachedTokens: 0, usageKnown: false, compactions: 0 };
     let status = 'failed', success = false, system = '', lastRequestMs = 0, currentInstruction = text;
     const guard = () => this.context().session === owner && !controller.signal.aborted;
     const redact = value => JSON.parse(JSON.stringify(value, (name, entry) => typeof entry === 'string' ? entry.replaceAll(config.key, '[已隐藏]') : entry));

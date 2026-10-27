@@ -4,6 +4,8 @@ import { AgentConversationRepository } from '../platform/agent-store.mjs';
 import { showAgentExchange } from './agent-inspector.mjs';
 import { AGENT_CORE_TOOLS, agentContextPolicy, agentContextUsage, agentContextSignature, estimateAgentTokens, prepareAgentHistory } from '../core/agent-context.mjs';
 import { t } from '../i18n.mjs';
+import { agentEffortLabel } from '../core/agent-routing.mjs';
+import { AgentRoutingControls } from './agent-routing-controls.mjs';
 
 const text = (tag, value, className = '') => { const node = document.createElement(tag); node.textContent = value; node.className = className; return node; };
 const button = (label, action) => { const node = text('button', label); node.type = 'button'; node.onclick = action; return node; };
@@ -12,7 +14,7 @@ const pretty = value => JSON.stringify(value, null, 2);
 const time = milliseconds => (milliseconds / 1000).toFixed(2) + ' s';
 export function agentUsageText(stats) {
   if (!stats) return '';
-  return [stats.model, stats.startedAt ? new Date(stats.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '', time(stats.durationMs ?? 0), stats.usageKnown ? t('agent-dialogues.s1f73712', { p0: stats.promptTokens, p1: stats.completionTokens, p2: stats.totalTokens }) : t('agent-dialogues.s0e03625'), stats.reasoningTokens ? t('agent-dialogues.s7321f8c', { p0: stats.reasoningTokens }) : '', stats.cachedTokens ? t('agent-dialogues.s5f7da44', { p0: stats.cachedTokens }) : '', stats.requests ? t('agent-dialogues.s3b8c12f', { p0: stats.requests }) : '', stats.tools ? t('agent-dialogues.sbc85fe9', { p0: stats.tools }) : ''].filter(Boolean).join(' · ');
+  return [stats.model, stats.reasoningEffort ? agentEffortLabel(stats.reasoningEffort) : '', stats.startedAt ? new Date(stats.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '', time(stats.durationMs ?? 0), stats.usageKnown ? t('agent-dialogues.s1f73712', { p0: stats.promptTokens, p1: stats.completionTokens, p2: stats.totalTokens }) : t('agent-dialogues.s0e03625'), stats.reasoningTokens ? t('agent-dialogues.s7321f8c', { p0: stats.reasoningTokens }) : '', stats.cachedTokens ? t('agent-dialogues.s5f7da44', { p0: stats.cachedTokens }) : '', stats.requests ? t('agent-dialogues.s3b8c12f', { p0: stats.requests }) : '', stats.tools ? t('agent-dialogues.sbc85fe9', { p0: stats.tools }) : ''].filter(Boolean).join(' · ');
 }
 
 export class AgentDialogues {
@@ -43,6 +45,7 @@ export class AgentDialogues {
     catch (error) { if (this.repository === repository) { for (const turn of turns) this.dirtyTurns.add(turn); for (const memory of memories) this.dirtyMemories.add(memory); } throw error; }
   }
   detach() {
+    this.routing?.close();
     this.autoQueue = false;
     if (this.running) { this.running.turn.status = 'stopped'; this.running.turn.error ??= t('agent-dialogues.s1ba77d7'); this.running.turn.messages = structuredClone(this.panel.agent?.turnMessages ?? this.running.turn.messages); this.dirtyTurns.add(this.running.turn); }
     this.flush().catch(error => this.panel.notify(t('agent-dialogues.sc51d4c3') + error.message, 'error'));
@@ -69,6 +72,7 @@ export class AgentDialogues {
     for (const [value, name] of [['ask', t('agent-dialogues.s4e79789')], ['dangerous', t('agent-dialogues.s4b1f840')], ['full', t('agent-dialogues.s2829acf')]]) { const option = text('option', name); option.value = value; panel.permission.append(option); }
     panel.permission.value = panel.settings.permission; panel.permission.onchange = () => { panel.settings.permission = panel.permission.value; panel.persist(); }; permissions.append(panel.permission);
     const controls = text('div', '', 'agent-controls'); controls.append(context, permissions);
+    this.routing = new AgentRoutingControls(panel);
     panel.status = text('p', '', 'agent-status'); panel.status.setAttribute('role', 'status');
     this.background = button('', () => { if (this.running) this.show(this.running.record.id); }); this.background.className = 'agent-background-task'; this.background.hidden = true;
     this.viewport = text('div', '', 'agent-messages'); this.viewport.setAttribute('role', 'log'); this.viewport.setAttribute('aria-label', t('agent-dialogues.s4636912'));
@@ -90,10 +94,10 @@ export class AgentDialogues {
     panel.input.oninput = () => { this.store.current.draft = panel.input.value; this.save(); this.updateBusy(); };
     panel.input.onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); this.composer.requestSubmit(); } };
     const actions = text('div', '', 'agent-composer-actions'); panel.send = button(t('agent-dialogues.s1214d63'), () => {}); panel.send.type = 'submit'; panel.stop = button(t('agent-dialogues.sa17f70a'), () => { this.pauseQueue(); panel.agent.stop(); }); panel.stop.hidden = true;
-    this.interruptButton = button(t('agent-dialogues.s90de0b5'), () => this.interrupt(panel.input.value)); this.interruptButton.hidden = true; actions.append(panel.status, panel.send, this.interruptButton, panel.stop);
+    this.interruptButton = button(t('agent-dialogues.s90de0b5'), () => this.interrupt(panel.input.value)); this.interruptButton.hidden = true; actions.append(panel.status, this.routing.toggle, panel.send, this.interruptButton, panel.stop, this.routing.menu);
     this.resumeQueue = button(t('agent-dialogues.s39faf0c'), () => { for (const { turn } of this.queued()) { turn.paused = false; this.save(turn); } this.autoQueue = true; this.drain(); }); this.resumeQueue.className = 'agent-queue-resume'; this.resumeQueue.hidden = true;
     this.composer.append(panel.input, actions); this.composer.onsubmit = event => { event.preventDefault(); this.send(panel.input.value); };
-    panel.host.append(topbar, controls, this.background, this.viewport, this.resumeQueue, this.composer);
+    panel.host.append(topbar, controls, this.background, this.viewport, this.resumeQueue, this.composer); this.updateRouting();
   }
   bind(agent) {
     agent.addEventListener('user', event => { if (this.running) { this.running.runId = event.detail.runId; this.running.turn.startedAt = event.detail.startedAt; this.runs.set(event.detail.runId, this.running); } });
@@ -233,7 +237,7 @@ export class AgentDialogues {
     } else {
       if (turn.status === 'steered') { meta.textContent = t('agent-dialogues.s97c2103'); work.hidden = true; }
       if (turn.status === 'cancelled') { meta.textContent = t('agent-dialogues.se8710fe'); work.hidden = true; }
-      actions.append(button(t('agent-dialogues.sc43e777'), () => this.edit(record, turn, user)), button(t('agent-dialogues.se2d53a6'), () => turn.compactOnly ? this.compact() : this.resend(record, turn, turn.text)));
+      actions.append(button(t('agent-dialogues.sc43e777'), () => this.edit(record, turn, user)), button(t('agent-dialogues.se2d53a6'), () => this.resend(record, turn, turn.text, { compactOnly: turn.compactOnly })));
       for (const action of actions.children) action.title = t('agent-dialogues.s8353df8');
     }
     for (const entry of turn.process ?? []) {
@@ -277,7 +281,8 @@ export class AgentDialogues {
     const busy = Boolean(this.panel.agent?.busy), loading = Boolean(this.loading);
     this.panel.send.hidden = false; this.panel.send.textContent = busy ? t('agent-dialogues.s91255f6') : t('agent-dialogues.s1214d63'); this.panel.send.disabled = loading;
     this.panel.stop.hidden = !busy; this.interruptButton.hidden = !busy; this.interruptButton.disabled = !this.panel.input.value.trim() || this.running?.record !== this.store.current;
-    this.panel.configure.disabled = this.panel.permission.disabled = busy || loading; this.panel.input.disabled = loading;
+    this.panel.configure.disabled = this.panel.permission.disabled = busy || loading || this.panel.keyLoading; this.panel.input.disabled = loading;
+    this.routing.updateBusy(Boolean(busy || loading || this.panel.keyLoading));
     this.contextMode.disabled = this.contextCount.disabled = this.select.disabled = this.panel.clear.disabled = loading;
     this.compactButton.disabled = busy || loading || !this.store.current.turns.some(turn => turn.messages?.length);
     for (const record of this.store.records.values()) for (const turn of record.turns) {
@@ -290,9 +295,12 @@ export class AgentDialogues {
     if (!this.panel.agent) return;
     if (value) this.phase = value;
     const busy = this.panel.agent.busy;
-    this.panel.status.textContent = this.loading ? t('agent-dialogues.s3de7f2d') : busy ? (this.running?.record.title ?? t('agent-dialogues.s3172b31')) + ' · ' + (this.phase ?? t('agent-dialogues.sfcb979e')) : t('agent-dialogues.sf44083a') + (this.panel.key ? this.panel.settings.model : t('agent-dialogues.s0e46ed7'));
+    this.panel.status.textContent = this.loading ? t('agent-dialogues.s3de7f2d') : busy ? (this.running?.record.title ?? t('agent-dialogues.s3172b31')) + ' · ' + (this.phase ?? t('agent-dialogues.sfcb979e')) : this.panel.key ? t('agent-route.ready') : t('agent-dialogues.s0e46ed7');
     this.background.hidden = !busy || !this.running || this.running.record === this.store.current;
     if (!this.background.hidden) this.background.textContent = t('agent-dialogues.s3c8dd03', { p0: this.running.record.title, p1: this.phase ?? t('agent-dialogues.s6d97436') });
+  }
+  updateRouting() {
+    this.routing?.update();
   }
   updateContextUsage() {
     if (!this.usage || !this.panel.agent) return;
@@ -356,10 +364,19 @@ export class AgentDialogues {
     const hint = text('small', t('agent-dialogues.s10fffe4'), 'hint');
     actions.append(button(t('agent-dialogues.sa4e6f10'), () => this.resend(record, turn, edit.value)), button(t('agent-dialogues.s4d0b468'), () => { edit.remove(); actions.remove(); hint.remove(); })); this.expandMessage(user, true); user.querySelector('.agent-message-body').append(edit, hint, actions); edit.focus();
   }
-  resend(record, turn, source) {
-    if (this.panel.agent.busy || !source.trim()) return;
-    const next = this.store.branch(record.id, record.turns.indexOf(turn)); this.show(next.id);
-    return this.send(source, t('agent-dialogues.s1f0d516'));
+  async resend(record, turn, source, { compactOnly = false } = {}) {
+    if (this.panel.agent.busy || this.loading || !source.trim()) return;
+    const generation = this.generation; await Promise.all([this.panel.credentialsReady, this.ready]);
+    if (generation !== this.generation || this.panel.agent.busy || this.loading || this.store.records.get(record.id) !== record || !record.turns.includes(turn)) return;
+    if (!this.panel.key) { this.panel.configuration(); return; }
+    const removed = this.store.truncate(record.id, record.turns.indexOf(turn));
+    for (const entry of removed) {
+      this.turnViews.get(entry)?.root.remove(); this.turnViews.delete(entry); this.dirtyTurns.delete(entry);
+      for (const exchange of entry.exchanges ?? []) this.activeExchanges.delete(exchange.id);
+    }
+    if (!record.memory) this.dirtyMemories.delete(record);
+    this.scrollStates.delete(record.id); this.show(record.id); record.draft = ''; this.panel.input.value = ''; this.save();
+    return this.send(source, t('agent-dialogues.s1f0d516'), { compactOnly });
   }
   fold(open) { for (const turn of this.recordView(this.store.current).querySelectorAll('.agent-turn')) { this.expandMessage(turn.querySelector('.agent-user-message'), open); this.expandMessage(turn.querySelector('.agent-turn-answer'), open); turn.querySelector('.agent-turn-work').open = open; } }
   manage() {

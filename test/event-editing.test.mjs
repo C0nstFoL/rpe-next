@@ -91,7 +91,7 @@ test('打击音不重复调度，seek 和暂停取消旧声音，倍速换算启
   assert.equal(scheduled[1].stopped, true); assert.equal(sounds.sources.size, 0);
 });
 
-test('高密度打击音限制瞬时声部，避免集中调度拖垮音频线程', () => {
+test('不支持混合音效的上下文限制瞬时声部，避免集中调度拖垮音频线程', () => {
   const chart = createChart(); chart.judgeLineList[0].notes = Array.from({ length: 500 }, () => createNote(1, 2, 0));
   const scheduled = [];
   const transport = { playing: true, time: 0.95, rate: 1, playRevision: 1, context: { currentTime: 10, createBufferSource() {

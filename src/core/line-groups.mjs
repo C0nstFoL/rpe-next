@@ -1,4 +1,16 @@
 import { t } from '../i18n.mjs';
+export const reservedLineGroupName = name => String(name ?? '').trim().toLowerCase() === 'all';
+export function normalizeLineGroups(chart) {
+  if (!Array.isArray(chart?.judgeLineGroup) || !chart.judgeLineGroup.some(reservedLineGroupName)) return chart;
+  const occupied = new Set(chart.judgeLineGroup.map(name => String(name).trim().toLowerCase()));
+  const names = chart.judgeLineGroup.map(name => {
+    if (!reservedLineGroupName(name)) return name;
+    const base = String(name).trim() + '_group'; let next = base, suffix = 2;
+    while (occupied.has(next.toLowerCase())) next = base + '_' + suffix++;
+    occupied.add(next.toLowerCase()); return next;
+  });
+  return { ...chart, judgeLineGroup: names };
+}
 export function groupNames(chart) {
   const names = Array.isArray(chart?.judgeLineGroup) ? [...chart.judgeLineGroup] : [];
   if (!names.length) names.push('Default');

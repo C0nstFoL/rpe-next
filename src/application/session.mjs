@@ -5,11 +5,12 @@ import { beatValue, fromNumber } from '../core/beat.mjs';
 import { selectionState, sameSelection, remapSelection, restoreSelection } from './selection-history.mjs';
 import { emitModHook } from '../core/mod-hooks.mjs';
 import { t } from '../i18n.mjs';
+import { normalizeLineGroups } from '../core/line-groups.mjs';
 
 export class EditorSession extends EventTarget {
   constructor(chart = createChart()) {
     super();
-    this.history = new History(integerChartAlpha(chart));
+    this.history = new History(integerChartAlpha(normalizeLineGroups(chart)));
     this.lineIndex = 0;
     this.selection = new Set();
     this.clipboard = [];

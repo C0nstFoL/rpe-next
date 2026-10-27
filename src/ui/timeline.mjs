@@ -12,7 +12,7 @@ import { captureSelection, editCapturedSelection, commitSelectionEdit } from '..
 import { lineDisplayLabel } from '../core/line-groups.mjs';
 import { trajectoryEventValue } from '../core/curve-trajectory.mjs';
 import { editorSkinContext } from './editor-skin-canvas.mjs';
-import { drawEditorJudgement } from './editor-judgement.mjs';
+import { drawEditorJudgement, editorJudgementWidth } from './editor-judgement.mjs';
 import { drawEventCurve, drawEventCurveBatch } from './event-curve.mjs';
 import { eventDisplayIndex, selectedEventGroups } from './event-display-index.mjs';
 import { intervalSelection, extendIntervalSelection } from '../core/selection-interval.mjs';
@@ -542,7 +542,7 @@ export class Timeline {
 
   drawJudgement(context, width, height, playBeat, area) {
     const referenceWidth = this.gridReferenceWidth ?? this.panelWidth(width, area);
-    drawEditorJudgement(context, this.judgementSegments(width, height, playBeat, area), this.judgementColor ?? '#ffffff', Math.max(0.5, (this.barWidth ?? 3) * 2 * referenceWidth / 1920));
+    drawEditorJudgement(context, this.judgementSegments(width, height, playBeat, area), this.judgementColor ?? '#ffffff', editorJudgementWidth(this, referenceWidth), this.judgementAlpha);
   }
 
   drawMultiLineGrid(context, width, height, playBeat, area = 'events') {

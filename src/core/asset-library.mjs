@@ -1,5 +1,7 @@
 import { t } from '../i18n.mjs';
 export const IMAGE_EXTENSION = /\.(png|jpe?g|webp|gif|bmp|avif)$/i;
+export const AUDIO_EXTENSION = /\.(mp3|ogg|wav|flac|m4a|aac|opus|webm)$/i;
+export const libraryAsset = path => IMAGE_EXTENSION.test(path) || AUDIO_EXTENSION.test(path);
 export const slashPath = path => String(path ?? '').replaceAll('\\', '/');
 export const pathKey = path => slashPath(path).toLowerCase();
 export const withinFolder = (path, folder) => !folder || pathKey(path).startsWith(pathKey(folder) + '/');
@@ -39,18 +41,23 @@ export function libraryImages(assets, chart = {}, chartName = '') {
   const roots = noiseSkinRoots(assets, chart, chartName);
   return [...assets].filter(([name]) => IMAGE_EXTENSION.test(name) && !skinOwnedPath(name, roots));
 }
+export function libraryMedia(assets, chart = {}, chartName = '') {
+  const roots = noiseSkinRoots(assets, chart, chartName);
+  return [...assets].filter(([name]) => libraryAsset(name) && !skinOwnedPath(name, roots));
+}
+export function libraryAudio(assets, chart = {}, chartName = '') { return libraryMedia(assets, chart, chartName).filter(([name]) => AUDIO_EXTENSION.test(name)); }
 
 export function libraryFolders(assets, folders = [], chart = {}, chartName = '') {
   const roots = noiseSkinRoots(assets, chart, chartName), result = new Set();
   for (const folder of folders) if (!skinOwnedPath(folder, roots)) { result.add(slashPath(folder)); collectAssetFolders(folder + '/_', result); }
-  for (const [path] of libraryImages(assets, chart, chartName)) collectAssetFolders(path, result);
+  for (const [path] of libraryMedia(assets, chart, chartName)) collectAssetFolders(path, result);
   return result;
 }
 
 export function assertImageFolder(context, folder) {
   const roots = noiseSkinRoots(context.assets, context.chart, context.chartName);
   if ([...roots].some(root => skinOwnedPath(folder, roots) || withinFolder(root, folder))) throw Error(t('asset-library.sa62d1e5'));
-  if ([...context.assets.keys()].some(path => withinFolder(path, folder) && !IMAGE_EXTENSION.test(path))) throw Error(t('asset-library.s9f3ae53'));
+  if ([...context.assets.keys()].some(path => withinFolder(path, folder) && !libraryAsset(path))) throw Error(t('asset-library.nonMediaFolder'));
 }
 
 export function moveLibraryPaths(context, from, to, folder = false) {
@@ -64,7 +71,7 @@ export function moveLibraryPaths(context, from, to, folder = false) {
     if (!folders.has(from)) throw Error(t('asset-library.s56bc875'));
     if ([...assets.keys()].some(path => pathKey(path) === pathKey(to))) throw Error(t('asset-library.s113e1e7'));
     if (from !== to && [...folders].some(path => pathKey(path) === pathKey(to) && pathKey(path) !== pathKey(from))) throw Error(t('asset-library.sd88508d'));
-  } else if (!assets.has(from) || !IMAGE_EXTENSION.test(to)) throw Error(t('asset-library.s70b1883'));
+  } else if (!assets.has(from) || !libraryAsset(from) || !(IMAGE_EXTENSION.test(from) ? IMAGE_EXTENSION : AUDIO_EXTENSION).test(to)) throw Error(t('asset-library.invalidMediaMove'));
   const paths = new Map([...assets.keys()].filter(path => folder ? withinFolder(path, from) : path === from)
     .map(path => [path, folder ? to + slashPath(path).slice(from.length) : to]));
   const occupied = new Set([...assets.keys()].filter(path => !paths.has(path)).map(pathKey));

@@ -40,6 +40,30 @@ test('默认仅打包当前谱面的媒体、判定线贴图和音符音效，�
   assert.ok(packageEntries(chart, assets, 'project/chart.json', { includeUnusedFiles: true }).has('unrelated.png'));
 });
 
+test('删除最后一个自定义音效音符后保留本地素材，音频和图片统一按未使用文件选项导出且不变成背景媒体', async () => {
+  const chart = createChart(), sound = new Uint8Array([4, 5, 6]), image = new Uint8Array([7, 8, 9]);
+  const assets = new Map([['cue.wav', sound], ['texture.png', image]]), originalAssets = new Map(assets);
+  chart.judgeLineList[0].notes = [{ ...createNote(1, 0, 0), hitsound: 'cue.wav' }];
+  chart.judgeLineList[0].Texture = 'texture.png';
+  for (const compatibility of ['next', 'rpe']) {
+    const used = packageEntries(chart, assets, 'chart.json');
+    assert.deepEqual(used.get('cue.wav'), sound); assert.deepEqual(used.get('texture.png'), image);
+    chart.judgeLineList[0].notes = []; chart.judgeLineList[0].Texture = 'line.png';
+    for (const includeUnusedFiles of [false, true]) {
+      const exported = createChartExport(chart, assets, 'chart.json', { compatibility, includeUnusedFiles });
+      const output = await readZip(await exported.blob.arrayBuffer());
+      assert.equal(output.has('cue.wav'), includeUnusedFiles); assert.equal(output.has('texture.png'), includeUnusedFiles);
+      if (includeUnusedFiles) { assert.deepEqual(output.get('cue.wav'), sound); assert.deepEqual(output.get('texture.png'), image); }
+      const info = parseInfo(new TextDecoder().decode(output.get('info.txt')));
+      assert.equal(info.Song, ''); assert.equal(info.Picture, '');
+      const reimported = await openFiles([new File([exported.blob], 'test.pez')]);
+      assert.equal(reimported.candidates[0].chart.META.song, ''); assert.equal(reimported.candidates[0].chart.META.background, '');
+    }
+    chart.judgeLineList[0].notes = [{ ...createNote(1, 0, 0), hitsound: 'cue.wav' }]; chart.judgeLineList[0].Texture = 'texture.png';
+  }
+  assert.deepEqual(assets, originalAssets);
+});
+
 test('所选噪域皮肤保留完整渲染依赖，未使用的皮肤、贴图及参数预设不导致打包', async () => {
   const catalogue = JSON.parse(await readFile(new URL('../assets/noise-skins/index.json', import.meta.url), 'utf8'));
   const assets = new Map();

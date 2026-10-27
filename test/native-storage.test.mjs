@@ -142,6 +142,13 @@ test('native image paths open named independent copies and preserve empty folder
   await assert.rejects(store.assetFolder(data.id, 'pictures/a.png'), /已被删除/);
 }));
 
+test('native audio paths open independent saved copies alongside images without exposing skin resources', () => fixture(async store => {
+  const data = project('audio-assets'); data.assets = [['sounds/cue.wav', new Uint8Array([1, 2, 3])], ['sounds/icon.png', new Uint8Array([4, 5])], ['shader/Ocean/main.glsl', new Uint8Array([6])], ['shader/Ocean/hidden.ogg', new Uint8Array([7])]];
+  await write(store, 'projects', data);
+  const folder = await store.assetFolder(data.id, 'sounds/cue.wav'); assert.deepEqual([...await readFile(join(folder, 'cue.wav'))], [1, 2, 3]); assert.deepEqual([...await readFile(join(folder, 'icon.png'))], [4, 5]);
+  assert.equal(await store.assetFolder(data.id, 'sounds', true), folder); await assert.rejects(store.assetFolder(data.id, 'shader/Ocean/hidden.ogg'), /找不到/);
+}));
+
 test('native named image view refuses directory links', () => fixture(async (store, root) => {
   const data = project('image-link'); data.assets = [['a.png', new Uint8Array([1])]];
   await write(store, 'projects', data);

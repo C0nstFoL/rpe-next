@@ -8,7 +8,7 @@ API版本：1。谱面工具→AI辅助，首次打开后AI页签在本次谱面
 
 用户消息和最终答复直接呈现，可通过各自的小标题折叠；工作过程结束后自动折叠，内部按顺序展示思考与工具调用，不再另套模型回复层级。模型返回的reasoning_content默认显示为单行思考预览，超出宽度用省略号截断，点击后展开全文，流式到达时更新；未返回时不生成或冒充思考。答复支持标题、列表、表格、引用、代码块与复制、强调和安全链接；原始HTML作为文本，脚本/本地文件链接和远程图片自动加载不被允许。
 
-历史消息可编辑重发，回复可重试；两者创建从该轮之前历史出发的新对话分支，保留原对话。已执行的谱面修改不自动撤销，因此提示词要求先重读当前谱面、防止重复生成，正常审批仍生效。每轮小字显示实际模型、开始时间、总用时、输入/输出/总tokens、可用的思考/缓存tokens、请求和工具次数；单次模型请求也有用时/用量。用量来自API返回，未提供时明确显示“用量未返回”，不伪造估计。总用时含用户等待，悬停可见模型请求用时。
+历史消息可编辑重发，回复可重试；两者均留在原对话中，替换该轮并丢弃之后的消息，不新建对话。对话名称、标识与上下文范围保持不变；仅保留该轮之前的完整消息，覆盖被丢弃消息的压缩摘要同时失效，用量重新估算，保存重开后也不恢复旧消息。已执行的谱面修改不自动撤销，因此提示词要求先重读当前谱面、防止重复生成，正常审批仍生效。每轮小字显示实际模型、开始时间、总用时、输入/输出/总tokens、可用的思考/缓存tokens、请求和工具次数；单次模型请求也有用时/用量。用量来自API返回，未提供时明确显示“用量未返回”，不伪造估计。总用时含用户等待，悬停可见模型请求用时。
 
 顶部两行紧凑排列对话管理、配置、上下文与权限，聊天内容占满剩余高度；“折叠全部”和“展开全部”位于管理菜单。发送按钮在输入框右下方；运行时可继续排队发送，提供插话和停止，窄面板自动换行。默认单次输出上限65536，旧内置8192默认值升级为65536，其他自定义上限保留。模型配置与审批模式仍为共享设置，各对话的上下文范围独立，修改在下次发送时生效。
 
@@ -65,7 +65,7 @@ Worker 只与宿主交换数据，不提供 DOM、Node、凭据、网络、Index
 ## 架构
 
 - `src/application/agent.mjs`：通用模型/工具循环、消息、轮次、停止和失败恢复。
-- `src/application/agent-conversations.mjs`：对话、分支、完整轮次上下文选择；`src/ui/agent-dialogues.mjs`管理展示与交互，`src/ui/agent-markdown.mjs`通过DOM构建安全Markdown。
+- `src/application/agent-conversations.mjs`：对话、历史截断、完整轮次上下文选择；`src/ui/agent-dialogues.mjs`管理展示与交互，`src/ui/agent-markdown.mjs`通过DOM构建安全Markdown。
 - `src/platform/agent-store.mjs`：分谱面与分轮次持久化；`src/core/agent-context.mjs`：压缩与上下文策略；`src/ui/agent-inspector.mjs`：完整请求检查。
 - `src/core/agent-commands.mjs`：命令注册、JSON参数校验、计划、审批、执行。
 - `src/application/agent-editor.mjs`：编辑器适配，不使模型持有编辑器实例。
@@ -128,6 +128,8 @@ prepare只读地生成确定计划，apply才执行。审批显示摘要与具�
 | ask_user | 以问题、可选选项和自由文本等待用户回答后继续 |
 
 通用chart工具可读取/编辑未知扩展字段、模组结构、所有音符事件、噪域层/皮肤及全局事件，不限内置例子。所有修改先在副本验证成功再一次提交；保留不相关字段；特殊JSON键按自有数据处理，不遍历原型链。透明度沿用原生取整规则。删线优先使用line_manage维护父线与着色器引用。
+
+音符`judgeArea`是独立于`size`的判定区域倍率，默认1；`tint`是RGB音符颜色，默认`[255,255,255]`；`tintHitEffects`是RGB特效颜色，默认`[255,236,160]`；自定义打击音效引用使用RPE的`hitsound`字段，空值或省略采用默认音效，`hitSound`仅兼容旧数据。音频素材不因被选中、试听或作为音符音效而替换谱面音乐，移动素材应同步引用。`META.song`和`META.background`的显式空值表示未绑定媒体，删除引用音符后仍保持未绑定；本地保存保留闲置素材，导出按“包含未使用文件”统一筛选音频与图片。多线表达式中的`all`不区分大小写表示全部线，不能作为判定线组名。
 
 `chart_tools`覆盖谱面信息、BPM、素材、波形频谱、噪域编辑、曲线音符、曲线轨迹、文字拼合、噪域图案、噪域追踪、多线编辑、全局事件、检查、历史和版本控制。生成命令直接复用原生计算函数，不通过点击隐藏面板伪装生成；文字和噪域图案与手动工具共用光栅化、后台拟合Worker及结果写入逻辑，停止时终止Worker。`text_fit`与`noise_fit`的`analyzeOnly=true`只返回数量/误差，不修改谱面、不需要编辑批准。拟合不达标返回`generated:false`，不能报告已生成。轨迹/曲线音符使用目标线局部拍，噪域图案与追踪使用全局拍。普通生成一次撤销，覆盖已有事件要求关键批准；生成不强制切换页面或当前时间。
 
@@ -233,11 +235,21 @@ api.agent.register({
 
 ## Provider与网络
 
+“新增方案”先打开模板选择窗口，选择服务或自定义模板后预填新方案；模板列表不常驻在配置表单中。关闭模板窗口不新增方案，预填项仍可修改，应用配置后才持久保存。
+
 editor.agent.providers.register接收id/name/defaultModel/models/capabilities/complete及可选search/fetch/modelInfo。complete({config,system,messages,tools,signal,onText,onReasoning,onTrace,exchangeId})返回Chat风格assistant消息，含可选tool_calls/reasoning_content；capabilities可提供contextWindow参与预算。可选异步modelInfo(config,{signal})返回含contextWindow的对象，优先使用服务提供的实际长度；必须遵守取消、缓存与凭据隔离规则，失败采用能力声明或服务默认值，不阻断正常任务。Provider负责各家API格式、参数、能力、流式与实际请求记录适配，命令、权限、UI保持独立。
 
-DeepSeek使用官方/chat/completions的SSE流式返回及stream_options.include_usage，完整响应结束才执行本轮工具；保留思考工具循环必需的reasoning_content，并通过onReasoning向界面发出服务实际返回的内容。complete结果可附usage和model，它们只用于统计，宿主会在写入下一次模型消息前剥离。当前默认deepseek-flash，另可填模型ID；图片能力按模型区分。搜索使用/v1/tools/search（query/count/need_content），网页使用/v1/tools/fetch，query最多128字符。Key只在Authorization头。浏览器只放行api.deepseek.com源，仍受CORS约束；桌面通过专用IPC和Electron网络层转发固定路径，沿用系统代理。此IPC不是任意网络代理。新增Provider的桌面网络源须显式扩展白名单。
+内置路由预设包括DeepSeek、OpenRouter、OpenAI、SiliconFlow、阿里云百炼/Qwen和Moonshot/Kimi，及自定义OpenAI兼容接口。配置方案各自保存名称、Provider、Base URL、模型、推理参数格式、强度、单次输出上限、压缩阈值和是否记住Key；同一Provider可有多个方案。配置窗口可新增、复制、重命名和删除方案，修改与删除在应用后生效，取消保留原配置。发送按钮左侧将模型短名与推理档位合为一个紧凑入口，不显示路由前缀、提供商名称或“推理强度”前缀；点击后在浮动面板调整方案、模型及强度，立即保存到本机，退出谱面或重启恢复；运行中锁定切换，整轮任务使用启动时的配置。权限、提示词、字号和每任务请求轮数仍共享。Key以方案id独立保存，复制方案后亦独立修改；旧DeepSeek方案保留`deepseek`凭据id，升级不要求重新输入。模组注册的Provider也可创建方案，原注册接口保持不变。
+
+DeepSeek当前模型通过`thinking.type`控制思考开关，通过`reasoning_effort`发送`low/high/max`，默认强度为`high`；界面显示“模型默认（高）”，不会发送映射后等价的重复档位。旧模型只显示其支持的开关。OpenRouter使用`reasoning.effort`，并优先根据`GET /models`的`reasoning.supported_efforts`和`mandatory`限制选项；还读取上下文长度、输入模态及输出上限。OpenAI兼容路由依选定格式发送`reasoning_effort`、`thinking.type`或`enable_thinking`，OpenAI输出上限使用`max_completion_tokens`。仅支持开关的模型不伪装成支持多档强度；自定义服务可在“接口兼容设置”选择参数格式，`none`不发送推理参数。模型ID可手填，也可获取服务的模型列表；实际模型可用性、工具和推理档位仍由服务决定。
+
+内置适配器使用`/chat/completions`的SSE流式返回及`stream_options.include_usage`，完整响应结束才执行本轮工具；保留工具循环必需的`reasoning_content`，OpenRouter额外原样保留返回的`reasoning_details`序列，并通过`onReasoning`向界面发出服务实际返回的文本。不合成未返回的推理过程。complete结果可附usage和model，它们只用于统计，宿主会在写入下一次模型消息前剥离；`rpen_route`仅用于识别推理所属的地址及模型，不发送到API。跨路由或模型不转发上个模型的私有推理字段。每轮统计额外记录配置方案和推理强度。
+
+DeepSeek搜索使用`/v1/tools/search`（query/count/need_content），网页使用`/v1/tools/fetch`，query最多128字符；这些专用工具仅请求该服务，其他路由不隐式借用DeepSeek的Key。Key只在Authorization头。网页允许连接自定义HTTPS服务及本机HTTP接口，仍受服务CORS与浏览器混合内容限制；桌面通过专用IPC和Electron网络层转发，沿用系统代理。两端共用地址校验：HTTPS或回环HTTP、无URL凭据/查询/片段，接口路径限于聊天、模型列表和上述工具，禁止重定向，以免Key泄漏到其他地址。预设Base URL可修改以适配地域或工作区地址。此IPC不开放任意HTTP方法、请求头或文件系统。
 
 401/402/429、超时、余额不足、截断/中断均提示，不自动重放已经完成的编辑；最大响应16MiB，单工具结果和上下文有界。停止后只保留完整工具轮次，旧计划不自动恢复。会话独立持久化；配置可调单次输出tokens、每任务最大模型请求轮数和自动压缩阈值。
+
+网页请求使用当前浏览器的`fetch`，由浏览器应用其系统代理、扩展或PAC规则；网页不另建直连通道，也不能替浏览器配置系统代理。浏览器不向网页公开实际代理选择；网络、证书、代理、跨域等失败可能统一表现为`Failed to fetch`，此时保留原始原因与目标域名，并提示检查该域名的代理规则及CORS，不伪造HTTP状态或断言一定未经过代理。HTTP失败显示实际域名、状态码、服务`error.message/code`及可用的上游`metadata.raw`原因，SSE内返回的错误同样处理；完整正文保留在请求详情中并隐藏密钥。手动“获取模型”会显示失败原因，自动能力探测仍允许回退。
 
 系统提示词位于src/core/agent-prompt.mjs，配置中可查看、修改和恢复。它包含音乐层次、拍数/延迟/倍率、音符与事件、父线锚点、噪域/全局事件、29种缓动、先读后写、必要参数询问、搜索引用核验、操作后验证、不绕过审批与不信任网页内指令。改提示词不能改执行层权限。
 

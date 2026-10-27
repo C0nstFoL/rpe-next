@@ -33,6 +33,11 @@ export class ResourceNoteSkin {
   }
   source(name,color) {const picture=this.images.get(name);return this.tintSource(`${this.id}:${name}`,picture,tint(color));}
   get hitLifetime() {return this.info.hitFxDuration;}
+  get hitBatchCompatible() {return this.drawHit === nativeHitDraw;}
+  hitRadius(size) {
+    const sheet = dimensions(this.images.get('hit_fx.png')), width = size * this.info.hitFxScale, height = width * sheet.height / this.info.hitFx[1] / (sheet.width / this.info.hitFx[0]);
+    return Math.max(Math.hypot(width, height) / 2, this.info.hideParticles ? 0 : width / 1.4 * 1.175);
+  }
   get perfectColor() {return noteSkinColor(this.info.colorPerfect);}
   noteImage(type,highlight=false){return this.images.get(names[type]+(highlight?'_mh':'')+'.png');}
   noteScale(highlight=false){return highlight?this.highlightScale:1;}
@@ -101,3 +106,5 @@ export class ResourceNoteSkin {
     return true;
   }
 }
+
+const nativeHitDraw = ResourceNoteSkin.prototype.drawHit;

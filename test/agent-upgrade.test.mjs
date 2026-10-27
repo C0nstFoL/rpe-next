@@ -43,6 +43,18 @@ test('快速退出重进等待同谱面旧写入，迟到任务收尾不覆盖�
   turn.status = 'stopped'; await first.saveTurns([turn]); const latest = await second.load(); assert.equal(latest.selected, created.id); assert.equal(latest.records.size, 2);
 });
 
+test('原对话重发后保存重开不会恢复旧回复、后续消息或失效摘要，其他对话保持原样', async () => {
+  const memory = storage(), workspace = crypto.randomUUID(), repository = new AgentConversationRepository(workspace, memory), book = new AgentConversations(), record = book.current;
+  record.title = '原对话'; record.turns = [0, 1, 2].map(index => ({ id: 'old-' + index, status: 'completed', text: 'old-' + index, answer: 'old answer', messages: [{ role: 'user', content: 'old-' + index }, { role: 'assistant', content: 'old answer' }] }));
+  record.memory = { through: 'old-2', messages: [{ role: 'user', content: 'future summary' }] };
+  const other = book.create('另一对话'); other.draft = 'keep'; await repository.save(book, { turns: record.turns, memories: [record] });
+  book.truncate(record.id, 1); const replacement = { id: 'replacement', text: 'new task', status: 'completed', messages: [{ role: 'user', content: 'new task' }, { role: 'assistant', content: 'new answer' }] }; record.turns.push(replacement);
+  await repository.save(book, { turns: [replacement] });
+  const loaded = await new AgentConversationRepository(workspace, memory).load(); assert.equal(loaded.records.size, 2); assert.equal(loaded.current.id, record.id); assert.equal(loaded.current.title, '原对话');
+  assert.deepEqual(loaded.current.turns.map(turn => turn.id), ['old-0', 'replacement']); assert.equal(loaded.current.memory, undefined); assert.equal(loaded.records.get(other.id).draft, 'keep');
+  assert.deepEqual(conversationMessages(loaded.current).map(message => message.content), ['old-0', 'old answer', 'new task', 'new answer']);
+});
+
 test('长上下文自动压缩，保留完整本轮记录与工具配对，而不是报废对话', async () => {
   let compressions = 0, chat = 0, ended;
   const agent = engine(async request => {

@@ -213,7 +213,7 @@ export function previewMultiEdit(snapshot, kind, options = {}) {
         }
       } else if (field === 'hitSound') {
         if (operation !== 'To') throw new Error(t('multi-edit.sb1c01c7'));
-        after.hitSound = String(options.lower || options.upper || '');
+        after.hitsound = String(options.lower || options.upper || ''); delete after.hitSound;
       } else {
         const endpointDistribution = kind === 'notes' || ['line', 'duration', 'order'].includes(field);
         const progress = endpointDistribution ? scope.u : (index + 1) / filtered.length;

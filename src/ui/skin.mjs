@@ -19,6 +19,8 @@ export class RpeSkin {
     this.resourcePack = pack; this.tints.clear(); this.invalidate();
   }
   get hitLifetime() { return this.resourcePack?.hitLifetime; }
+  get hitBatchCompatible() { return this.drawHit === nativeHitDraw && (!this.resourcePack || this.resourcePack.hitBatchCompatible); }
+  hitRadius(size) { return this.hitBatchCompatible ? this.resourcePack?.hitRadius(size) ?? size : Infinity; }
   drawHit(context, options) { return this.resourcePack?.drawHit(context, options) ?? false; }
   noteImage(type, highlight = false) { return this.resourcePack?.noteImage(type, highlight) ?? this.images.get((highlight ? highlights : names)[type]); }
   noteScale(highlight = false) { return this.resourcePack?.noteScale?.(highlight) ?? 1; }
@@ -88,3 +90,5 @@ export class RpeSkin {
     return true;
   }
 }
+
+const nativeHitDraw = RpeSkin.prototype.drawHit;

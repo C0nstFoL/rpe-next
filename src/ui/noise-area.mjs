@@ -13,7 +13,7 @@ import { evaluateEventNumber } from '../core/numeric-expression.mjs';
 import { numericExpressionSource, setNumericExpressionResolver } from './numeric-expression-input.mjs';
 import { intervalSelection, extendIntervalSelection } from '../core/selection-interval.mjs';
 import { IntervalIndex } from '../core/interval-index.mjs';
-import { drawEditorJudgement } from './editor-judgement.mjs';
+import { drawEditorJudgement, editorJudgementWidth } from './editor-judgement.mjs';
 import { dragEventEndpoint } from '../core/event-drag.mjs';
 import { t } from '../i18n.mjs';
 
@@ -630,7 +630,7 @@ export class NoiseAreaEditor {
     const owner = this.area() ? `#${this.selected} ${this.area().Name || '未命名噪域'}` : t('noise-area.sd7b34fd');
     const description = t('noise-area.se2f1ca6', { p0: this.areas().length, p1: owner });
     if (description !== this.ariaDescription) { this.canvas.setAttribute('aria-description', description); this.ariaDescription = description; }
-    drawEditorJudgement(context, [{ left: 0, right: width, y: this.y(timeline.origin) }], timeline.judgementColor ?? '#ffffff');
+    drawEditorJudgement(context, [{ left: 0, right: width, y: this.y(timeline.origin) }], timeline.judgementColor ?? '#ffffff', editorJudgementWidth(timeline, timeline.gridReferenceWidth ?? width), timeline.judgementAlpha);
   }
   eventGroups(events) {
     return eventDisplayIndex(this, events, this.draftChart ?? this.context.session?.chart).groups;

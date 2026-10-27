@@ -36,12 +36,54 @@ test('新会话上下文默认全部，独立最近轮次/无历史，按完整�
   messages[0].content = 'changed'; assert.equal(first.turns[2].messages[0].content, '2');
 });
 
-test('编辑/重试分支只复制目标之前的历史，不改变原对话；重命名与删除不串上下文', () => {
+test('显式创建对话分支只复制目标之前的历史；重命名与删除不串上下文', () => {
   const store = new AgentConversations(), source = store.current; source.turns = [0, 1, 2].map(index => ({ id: index, text: String(index), messages: [{ role: 'user', content: String(index) }] }));
   store.setContext(source.id, 'last', 2); const branch = store.branch(source.id, 1); assert.equal(branch.turns.length, 1); assert.equal(source.turns.length, 3);
   branch.turns[0].text = 'other'; assert.equal(source.turns[0].text, '0'); assert.deepEqual(branch.context, { mode: 'last', turns: 2 });
   store.rename(branch.id, '分支'); assert.equal(store.current.title, '分支'); store.remove(branch.id); assert.equal(store.current.id, source.id);
   store.remove(source.id); assert.equal(store.records.size, 1); assert.equal(store.current.turns.length, 0);
+});
+
+test('重发截断原对话，保留标识、名称、上下文与早期工具轮次，清除覆盖后续消息的摘要和用量', () => {
+  const store = new AgentConversations(), record = store.current; record.title = '保留名称';
+  record.turns = Array.from({ length: 4 }, (_, index) => ({ id: 'turn-' + index, messages: [{ role: 'user', content: String(index) }, { role: 'assistant', content: null, tool_calls: [{ id: 'call-' + index }] }, { role: 'tool', tool_call_id: 'call-' + index, content: '{}' }, { role: 'assistant', content: 'done' }] }));
+  record.memory = { through: 'turn-3', messages: [{ role: 'user', content: '已丢弃的后续消息摘要' }] }; record.contextUsage = { tokens: 4000 };
+  const other = store.create('另一对话'); other.draft = '另一份草稿'; const before = structuredClone(other), original = record.turns[0];
+  const removed = store.truncate(record.id, 2);
+  assert.equal(store.records.size, 2); assert.equal(store.current, record); assert.equal(record.title, '保留名称'); assert.equal(record.turns[0], original);
+  assert.deepEqual(record.turns.map(turn => turn.id), ['turn-0', 'turn-1']); assert.deepEqual(removed.map(turn => turn.id), ['turn-2', 'turn-3']);
+  assert.equal(record.memory, undefined); assert.equal(record.contextUsage, undefined); assert.deepEqual(record.context, { mode: 'all', turns: 6 }); assert.deepEqual(other, before);
+  const messages = conversationMessages(record); assert.equal(messages.length, 8); assert.deepEqual(messages.map(message => message.role), ['user', 'assistant', 'tool', 'assistant', 'user', 'assistant', 'tool', 'assistant']);
+  assert.equal(messages.some(message => message.content?.includes('后续消息')), false);
+});
+
+test('截断不会丢弃只涵盖保留轮次的压缩摘要，最近N轮设置不变，非法位置不修改历史', () => {
+  const store = new AgentConversations(), record = store.current;
+  record.turns = [0, 1, 2].map(index => ({ id: 'turn-' + index, messages: [{ role: 'user', content: 'task-' + index }] }));
+  record.memory = { through: 'turn-0', messages: [{ role: 'user', content: 'safe summary' }] };
+  store.truncate(record.id, 2); assert.deepEqual(conversationMessages(record).map(message => message.content), ['safe summary', 'task-1']);
+  store.setContext(record.id, 'last', 1); const before = store.snapshot();
+  for (const position of [-1, 0.5, 2, NaN]) assert.throws(() => store.truncate(record.id, position)); assert.deepEqual(store.snapshot(), before);
+  store.truncate(record.id, 1); assert.deepEqual(record.context, { mode: 'last', turns: 1 }); assert.deepEqual(conversationMessages(record).map(message => message.content), ['task-0']);
+});
+
+test('原对话重发清理后续视图、队列与旧请求缓存，压缩重试也从原位置重新开始', async () => {
+  const store = new AgentConversations(), record = store.current; record.turns = [0, 1, 2].map(index => ({ id: 'turn-' + index, text: 'task-' + index, status: index === 2 ? 'queued' : 'completed', exchanges: [{ id: 'trace-' + index }], messages: [{ role: 'user', content: 'task-' + index }] }));
+  record.memory = { through: 'turn-2', messages: [] }; const discarded = record.turns.slice(1), activeExchanges = new Map(record.turns.map(turn => [turn.exchanges[0].id, {}])), turns = new WeakMap(); let removed = 0, sent;
+  for (const turn of record.turns) turns.set(turn, { root: { remove() { removed++; } } });
+  const dialogues = Object.assign(Object.create(AgentDialogues.prototype), { store, generation: 1, ready: Promise.resolve(), panel: { agent: { busy: false }, key: 'test-key', credentialsReady: Promise.resolve(), input: { value: '' } }, dirtyTurns: new Set(record.turns), dirtyMemories: new Set([record]), turnViews: turns, activeExchanges, scrollStates: new Map(),
+    show: id => store.select(id), save() {}, send: (source, instruction, options) => { sent = { source, instruction, options, history: conversationMessages(record) }; } });
+  await dialogues.resend(record, record.turns[1], '改后的消息', { compactOnly: true });
+  assert.equal(store.records.size, 1); assert.equal(store.current, record); assert.equal(record.turns.length, 1); assert.equal(removed, 2); assert.equal(dialogues.dirtyMemories.size, 0);
+  assert.equal(sent.source, '改后的消息'); assert.equal(sent.options.compactOnly, true); assert.deepEqual(sent.history.map(message => message.content), ['task-0']);
+  for (const turn of discarded) { assert.equal(turns.has(turn), false); assert.equal(dialogues.dirtyTurns.has(turn), false); assert.equal(activeExchanges.has(turn.exchanges[0].id), false); }
+});
+
+test('重发等待凭据时换谱面或缺少Key，不会提前丢弃原对话', async () => {
+  const store = new AgentConversations(), record = store.current; record.turns = [{ id: 'first', text: 'task', messages: [] }]; let release, configured = 0;
+  const dialogues = Object.assign(Object.create(AgentDialogues.prototype), { store, generation: 1, ready: Promise.resolve(), panel: { agent: { busy: false }, key: 'test', credentialsReady: new Promise(resolve => { release = resolve; }), configuration() { configured++; } } });
+  const pending = dialogues.resend(record, record.turns[0], 'retry'); dialogues.generation++; release(); await pending; assert.equal(record.turns.length, 1);
+  dialogues.panel.key = ''; await dialogues.resend(record, record.turns[0], 'retry'); assert.equal(configured, 1); assert.equal(record.turns.length, 1);
 });
 
 test('默认输出65536；Markdown链接不允许脚本与本地文件，提示词包含广义概念分类', () => {

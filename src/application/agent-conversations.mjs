@@ -37,6 +37,12 @@ export class AgentConversations {
     const record = this.create(source.title + t('agent-conversations.s2e72d6b')); record.context = { ...source.context };
     record.turns = structuredClone(source.turns.slice(0, turnIndex)); return record;
   }
+  truncate(id, turnIndex) {
+    const record = this.records.get(id); if (!record || !Number.isSafeInteger(turnIndex) || !record.turns[turnIndex]) throw Error(t('agent-conversations.sa4cc469'));
+    const removed = record.turns.splice(turnIndex);
+    if (record.memory && !record.turns.some(turn => turn.id === record.memory.through)) delete record.memory;
+    delete record.contextUsage; this.selected = id; return removed;
+  }
   snapshot({ turns = true, memory = true } = {}) {
     return { version: 1, selected: this.selected, records: [...this.records.values()].map(record => ({
       ...structuredClone(Object.fromEntries(Object.entries(record).filter(([key]) => !['turns', 'memory'].includes(key)))),

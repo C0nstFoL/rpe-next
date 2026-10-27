@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createChart, createLine } from '../src/core/chart.mjs';
-import { libraryImages, libraryFolders, moveLibraryPaths, validAssetPath } from '../src/core/asset-library.mjs';
+import { createChart, createLine, createNote } from '../src/core/chart.mjs';
+import { libraryImages, libraryAudio, libraryMedia, libraryFolders, moveLibraryPaths, validAssetPath } from '../src/core/asset-library.mjs';
 import { remapAssetReferences, assetReference } from '../src/platform/asset-library.mjs';
 import { assetPath } from '../src/platform/files.mjs';
 
@@ -56,8 +56,8 @@ test('folder moves preserve nested images and empty folders, updating all refere
   assert.equal(assetPath(result.assets, chart.META.background, ctx.chartName), 'destination/new/sub/b.png');
 });
 
-test('folder/image collisions, non-image folders, cycles and skin-package mutations fail without changing assets', () => {
-  const ctx = context(['art/a.png', 'other/A.PNG', 'mixed/music.ogg', 'mixed/b.png', 'shader/Ocean/main.glsl', 'shader/Ocean/o.png'], ['empty', 'other']);
+test('folder/media collisions, non-media folders, cycles and skin-package mutations fail without changing assets', () => {
+  const ctx = context(['art/a.png', 'other/A.PNG', 'mixed/music.ogg', 'mixed/b.png', 'mixed/chart.json', 'shader/Ocean/main.glsl', 'shader/Ocean/o.png'], ['empty', 'other']);
   for (const run of [
     () => moveLibraryPaths(ctx, 'art/a.png', 'other/a.png'),
     () => moveLibraryPaths(ctx, 'art/a.png', 'other'),
@@ -78,4 +78,22 @@ test('case-only renames and empty-folder moves keep valid structure', () => {
   assert.equal(image.assets.get('art/A.png'), bytes);
   const folder = moveLibraryPaths(ctx, 'empty', 'renamed', true);
   assert.ok(folder.folders.has('renamed/sub')); assert.ok(!folder.folders.has('empty/sub'));
+});
+
+test('audio assets appear in the library but stay out of texture choices, and skin-owned audio stays hidden', () => {
+  const ctx = context(['audio/cue.WAV', 'audio/sub/hit.ogg', 'art/pic.png', 'shader/Ocean/main.glsl', 'shader/Ocean/hidden.wav']);
+  assert.deepEqual(libraryMedia(ctx.assets, ctx.chart).map(([name]) => name), ['audio/cue.WAV', 'audio/sub/hit.ogg', 'art/pic.png']);
+  assert.deepEqual(libraryImages(ctx.assets, ctx.chart).map(([name]) => name), ['art/pic.png']);
+  assert.deepEqual(libraryAudio(ctx.assets, ctx.chart).map(([name]) => name), ['audio/cue.WAV', 'audio/sub/hit.ogg']);
+  assert.equal(libraryFolders(ctx.assets).has('audio/sub'), true);
+});
+
+test('moving mixed image/audio folders remaps canonical and legacy note sounds without touching same-named assets', () => {
+  const ctx = context(['charts/audio/cue.wav', 'charts/audio/pic.png', 'charts/other/cue.wav']);
+  ctx.chart.judgeLineList[0].notes = [{ ...createNote(1, 0, 0), hitsound: 'audio/cue.wav' }, { ...createNote(3, 1, 0), hitSound: 'audio/cue.wav' }, { ...createNote(4, 2, 0), hitsound: 'other/cue.wav' }];
+  const result = moveLibraryPaths(ctx, 'charts/audio', 'media/moved', true), chart = remapAssetReferences(ctx.chart, ctx.assets, result.assets, result.paths, ctx.chartName);
+  assert.equal(assetPath(result.assets, chart.judgeLineList[0].notes[0].hitsound, ctx.chartName), 'media/moved/cue.wav');
+  assert.equal(assetPath(result.assets, chart.judgeLineList[0].notes[1].hitSound, ctx.chartName), 'media/moved/cue.wav');
+  assert.equal(chart.judgeLineList[0].notes[2], ctx.chart.judgeLineList[0].notes[2]);
+  assert.throws(() => moveLibraryPaths(ctx, 'charts/audio/cue.wav', 'audio.png'));
 });

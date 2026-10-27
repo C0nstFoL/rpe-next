@@ -17,6 +17,12 @@ export function previewViewport(width, height, ratio = 1.5) {
     left: (width - logicalWidth * scale) / 2, top: (height - logicalHeight * scale) / 2 };
 }
 
+export function previewDefaultFrame(viewport, divisor) {
+  if (!(divisor > 1)) return null;
+  const width = viewport.width / divisor, height = viewport.height / divisor;
+  return { left: viewport.left + (viewport.width - width) / 2, top: viewport.top + (viewport.height - height) / 2, width, height };
+}
+
 export function overflowTextureSize(width, height, pixelRatio, blur, filterRadius = 8) {
   const ratio = blur > 0 ? Math.min(pixelRatio, 1, filterRadius / Math.max(filterRadius, blur), Math.sqrt(480000 / Math.max(1, width * height))) : pixelRatio;
   return { width: Math.max(1, Math.round(width * ratio)), height: Math.max(1, Math.round(height * ratio)) };

@@ -30,6 +30,13 @@ test('多线表达式支持分组名并在完整分组时优先显示分组名',
   assert.equal(formatLineExpression([0, 1, 2], session.chart), 'Verse 0');
 });
 
+test('all大小写不敏感并可与线号和组名混用，覆盖全部线时显示all', () => {
+  const session = sessionWithLines(4); session.chart.judgeLineGroup = ['Default', 'Verse']; session.chart.judgeLineList[2].Group = 1;
+  for (const text of ['all', 'ALL', 'aLl', '0 ALL Verse']) assert.deepEqual(parseLineExpression(text, 4, session.chart), [0, 1, 2, 3]);
+  assert.deepEqual(parseLineExpression('all', 0), []); assert.equal(formatLineExpression([0, 1, 2, 3], session.chart), 'all');
+  assert.throws(() => parseLineExpression('"all"', 4, session.chart));
+});
+
 test('判定线列表标出非默认父线、绑定 UI、zOrder 和贴图', () => {
   assert.deepEqual(lineFeatureLabels({ father: 0, attachUI: 'name', zOrder: 2, Texture: 'custom.png' }), ['父线=0', 'UI=name', 'Z=2', '贴图=custom.png']);
   assert.deepEqual(lineFeatureLabels({ father: -1, zOrder: 0, Texture: 'line.png' }), []);

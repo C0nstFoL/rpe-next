@@ -8,6 +8,7 @@ import { validateNoiseLayers, NOISE_LAYER_VERSION } from './noise-skin.mjs';
 import { emitModHook } from './mod-hooks.mjs';
 import { validateGlobalEvents, GLOBAL_EVENT_VERSION } from './global-events.mjs';
 import { t } from '../i18n.mjs';
+import { normalizeLineGroups, reservedLineGroupName } from './line-groups.mjs';
 
 export const EVENT_TYPES = ['moveXEvents', 'moveYEvents', 'rotateEvents', 'alphaEvents', 'speedEvents'];
 export const EXTENDED_TYPES = ['scaleXEvents', 'scaleYEvents', 'colorEvents', 'paintEvents', 'textEvents', 'inclineEvents', 'gifEvents'];
@@ -42,6 +43,7 @@ export function parseChart(text) {
   let chart;
   try { chart = JSON.parse(text.replace(/^\uFEFF/, '')); }
   catch { throw new Error(t('chart.sa8af1fb')); }
+  chart = normalizeLineGroups(chart);
   if (chart.blockAreaList != null) chart.blockAreaList = normalizeNoiseAreas(chart.blockAreaList);
   assertChart(chart);
   return integerChartAlpha(chart);
@@ -72,6 +74,7 @@ export function assertChart(chart) {
   if (!chart || typeof chart !== 'object' || !chart.META || typeof chart.META !== 'object' || Array.isArray(chart.META)) throw new Error(t('chart.sd96a82c'));
   if (chart.judgeLineList != null && !Array.isArray(chart.judgeLineList)) throw new Error(t('chart.se63fe61'));
   new TempoMap(chart.BPMList);
+  if (chart.judgeLineGroup?.some?.(reservedLineGroupName)) throw Error(t('line-groups.reservedAll'));
   if (chart.META.offset !== undefined && !Number.isFinite(chart.META.offset)) throw new Error(t('chart.s0f9216b'));
   if (chart.blockAreaList != null) validateNoiseAreas(chart.blockAreaList);
   validateNoiseLayers(chart);

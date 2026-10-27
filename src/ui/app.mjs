@@ -14,7 +14,7 @@ import { readChartImport } from '../platform/chart-import.mjs';
 import { listDrafts, readDraft, saveSnapshot } from '../platform/recovery.mjs';
 import { Timeline, prepareCanvas } from './timeline.mjs';
 import { Preview } from './preview.mjs';
-import { renderProperties } from './inspector.mjs';
+import { renderProperties, disposeNoteProperties } from './inspector.mjs';
 import { showDialog, editJson, choose, confirmAction, dialogOpen } from './dialog.mjs';
 import { migratePreferences, shortcutAction, shortcutReleased, shortcutMatches, DEFAULT_HOTKEYS } from '../core/preferences.mjs';
 import { directoryEntries, uploadedEntries, scanMigration } from '../platform/migration.mjs';
@@ -64,7 +64,7 @@ import { showHotkeySettings } from './hotkey-settings.mjs';
 import { AutoSaveClock } from '../application/autosave.mjs';
 import { ManualSaveQueue } from '../application/manual-save.mjs';
 import { SPECIAL_TRACKS, MAX_BASE_LAYERS } from '../core/editor-display.mjs';
-import { lineGroupName, isDefaultLineGroup, lineDisplayLabel } from '../core/line-groups.mjs';
+import { lineGroupName, isDefaultLineGroup, lineDisplayLabel, normalizeLineGroups } from '../core/line-groups.mjs';
 import { isTextEntry, usesNativeTextShortcut, releaseShortcutFocus } from './keyboard.mjs';
 import { setRatioOptions, applyViewControls } from './view-controls.mjs';
 import { generateCurveNotes } from '../core/curve-notes.mjs';
@@ -147,6 +147,7 @@ const displayFields = [
   ['force-simple-noise', 'forceSimpleNoise', false],
   ['judgement-offset', 'judgementOffset', 92],
   ['judgement-color', 'judgementColor', '#ffffff'],
+  ['judgement-width', 'judgementWidth', DEFAULT_EDITOR_PREFERENCES.judgementWidth], ['judgement-alpha', 'judgementAlpha', DEFAULT_EDITOR_PREFERENCES.judgementAlpha],
   ['rpe-event-drag', 'rpeEventDrag', DEFAULT_EDITOR_PREFERENCES.rpeEventDrag],
   ['default-line-thickness', 'lineScale', 1.5],
   ['line-switcher-enabled', 'lineSwitcher', true],
@@ -218,7 +219,7 @@ let editTimeSeconds = 0;
 let editClockTick = performance.now();
 let lastDiagnosticSignature = null;
 const audio = new AudioTransport();
-const hitSounds = new HitSounds(audio);
+const hitSounds = new HitSounds(audio, { onWarning: message => notify(message, 'warning', 7000) });
 const preview = new Preview(element('#preview'));
 const realtimePreview = new Preview(element('#realtime-preview'));
 const lineInfoScene = new SceneRuntime();
@@ -330,12 +331,13 @@ document.addEventListener('rpen-editor-skin-changed', () => {
   if (activePaneName === 'clipboard') renderClipboardPanel();
 });
 document.addEventListener('rpen-note-skin-changed', () => { if (textLinesPanel.active) textLinesPanel.refresh(); });
-const assetLibrary = new AssetLibraryPanel(element('#asset-library'), () => ({ assets, folders: assetFolders, chart: session.chart, chartName }), {
+const assetLibrary = new AssetLibraryPanel(element('#asset-library'), () => ({ assets, folders: assetFolders, chart: session.chart, chartName, previewVolume: hitSounds.volume }), {
   notify,
   onChange: (nextAssets, nextFolders, paths) => {
     const nextChart = remapAssetReferences(session.chart, assets, nextAssets, paths, chartName);
     assets = nextAssets; assetFolders = new Set(nextFolders ?? []); assetDirty = true;
     if (nextChart !== session.chart) session.commit(t('app.s66f5500'), nextChart);
+    hitSounds.chart = session.chart; hitSounds.setAssets(assets, chartName); if (audio.playing) hitSounds.prepare().catch(reportError);
     images.load(session.chart, assets, chartName); status(t('app.s61fc662')); renderSession();
   },
   openFolder: nativeStorage ? async (path, folder) => {
@@ -805,6 +807,8 @@ function persistEditor() {
 }
 
 function activatePane(name) {
+  if (activePaneName === 'assets' && name !== 'assets') assetLibrary.disposeUrls();
+  if (name !== 'notes') disposeNoteProperties();
   if (name === 'global-event-properties' && (!globalEvents.active || globalEvents.selection.size !== 1)) name = 'global-events';
   if (name === 'global-events' && !globalEvents.active) { openGlobalEvents(); return; }
   if (name !== 'events' && eventSampler.active) eventSampler.finish(false);
@@ -1035,7 +1039,7 @@ function renderSession() {
   if (activePaneName === 'metadata') renderMetadataPanel(session, element('#metadata-editor'), () => { activatePane('chart'); renderSession(); });
   if (activePaneName === 'bpm') renderBpmPanel(session, element('#bpm-editor'));
   session.eventLayer = timeline.layer;
-  renderProperties(session, reportError);
+  renderProperties(session, reportError, { getAssets: () => assets, getChartName: () => chartName, volume: () => hitSounds.volume, onHitSoundChange: () => { hitSounds.chart = session.chart; if (audio.playing) hitSounds.prepare().catch(reportError); } });
   if (!session.liveEventEdit) renderEventInspector(session, tempo, currentBeat, reportError, notify, eventSampler);
   if (session.eventSelection.size) {
     timeline.eventPlacementType = session.eventSelection.values().next().value.split(':')[0];
@@ -1086,6 +1090,7 @@ function renderSession() {
 session.addEventListener('change', renderSession);
 
 function replaceChart(chart, name, nextAssets = new Map(), nextFolders = [], options = {}) {
+  chart = normalizeLineGroups(chart);
   agentPanel?.reset();
   assertChart(chart);
   if (!options.preserveRepoId) { versionRepoId = options.repoId ?? crypto.randomUUID(); versionControl?.detach(); }
@@ -1096,6 +1101,7 @@ function replaceChart(chart, name, nextAssets = new Map(), nextFolders = [], opt
   noiseTrackingPanel.reset();
   if (!collaborationJoining && collaboration.client.active) collaboration.client.leave();
   lineSwitcher.reset();
+  disposeNoteProperties(); assetLibrary.disposeUrls();
   playback.pause(); audio.clear();
   audioAnalysis.setBuffer(null);
   hitSounds.stop(); hitSounds.onlyCurrentLine = false; element('#mute-current-line').setAttribute('aria-pressed', 'false'); element('#mute-current-line').classList.remove('active'); images.clear(); libraryProject = null;
@@ -2135,6 +2141,7 @@ function applyDisplaySettings() {
   element('#toolbar-mode').title = t('app.sdb02ef4', { p0: toolbarMode === 'icons' ? t('app.s1f24c1e') : toolbarMode === 'wide' ? t('app.s6e6e581') : t('app.sc837edc') });
   timeline.barWidth = Number(element('#bar-width').value); timeline.barAlpha = Number(element('#bar-alpha').value); timeline.judgementOffset = Number(element('#judgement-offset').value);
   timeline.judgementColor = element('#judgement-color').value;
+  timeline.judgementWidth = Number(element('#judgement-width').value); timeline.judgementAlpha = Number(element('#judgement-alpha').value);
   timeline.eventValueFontSize = Number(element('#event-value-size').value); timeline.eventValueThreshold = Number(element('#event-value-threshold').value); timeline.eventCurveThreshold = Number(element('#event-curve-threshold').value); timeline.eventOpacity = Number(element('#event-opacity').value); timeline.eventBarWidth = Number(element('#event-bar-width').value);
   timeline.seamlessEvents = element('#seamless-events').checked;
   timeline.rpeEventDrag = globalEvents.timeline.rpeEventDrag = element('#rpe-event-drag').checked;

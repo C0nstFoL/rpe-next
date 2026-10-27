@@ -222,7 +222,7 @@ export class NoteSkins {
   async audition(type){
     try{this.stopSound();const context=this.audio.ensureContext();await context.resume();let buffer;
       if(this.draft){const sounds=await decodeNoteSkinSounds(this.draft,context);buffer=sounds.get(type);}
-      if(!buffer){await this.hitSounds.prepare();buffer=this.hitSounds.buffers.get(type);}
+      if(!buffer)buffer=await this.hitSounds.defaultBuffer(type,context);
       if(!buffer)throw new Error(t('note-skins.s80488c6'));
       if(!this.dialog.open)return;const source=context.createBufferSource();source.buffer=buffer;const gain=context.createGain();gain.gain.value=this.hitSounds.volume;gain.connect(context.destination);source.connect(gain);source.onended=()=>{source.disconnect();gain.disconnect();if(this.soundSource===source)this.soundSource=null;};this.soundSource=source;source.start();
     }catch(error){this.error(error);}

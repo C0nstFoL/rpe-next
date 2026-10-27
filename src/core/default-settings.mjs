@@ -40,6 +40,8 @@ export const DEFAULT_EDITOR_PREFERENCES = Object.freeze({
   "division": 4,
   "snapX": true,
   "judgementOffset": 92,
+  "judgementWidth": 5,
+  "judgementAlpha": 0.6,
   "realtime": true,
   "hitEnabled": true,
   "hitTapDelay": 0,

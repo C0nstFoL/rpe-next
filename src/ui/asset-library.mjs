@@ -1,7 +1,9 @@
 import { showDialog } from './dialog.mjs';
 import { assetPath, mediaType } from '../platform/files.mjs';
-import { IMAGE_EXTENSION, slashPath, pathKey, parentFolder, withinFolder, validAssetPath, collectAssetFolders,
-  noiseSkinRoots, skinOwnedPath, libraryImages, libraryFolders, assertImageFolder, moveLibraryPaths } from '../core/asset-library.mjs';
+import { AUDIO_EXTENSION, libraryAsset, slashPath, pathKey, parentFolder, withinFolder, validAssetPath, collectAssetFolders,
+  noiseSkinRoots, skinOwnedPath, libraryMedia, libraryFolders, assertImageFolder, moveLibraryPaths } from '../core/asset-library.mjs';
+import { AssetAudioPlayer } from './asset-audio.mjs';
+import { AssetMetadataReader, formatAssetDuration } from '../platform/asset-metadata.mjs';
 import { t } from '../i18n.mjs';
 
 function createUrl(bytes, name) { return URL.createObjectURL(new Blob([bytes], { type: mediaType(name) })); }
@@ -10,9 +12,11 @@ export class AssetLibraryPanel {
   constructor(host, getContext, { notify = () => {}, onChange = () => {}, openFolder } = {}) {
     this.host = host; this.getContext = getContext; this.notify = notify; this.onChange = onChange; this.openFolder = openFolder;
     this.selected = null; this.selectedFolder = null; this.urls = []; this.collapsed = new Set();
+    this.audioPlayer = new AssetAudioPlayer({ volume: () => this.getContext().previewVolume ?? 0.3, reportError: error => this.notify(error.message, 'error') });
+    this.metadata = new AssetMetadataReader();
   }
 
-  disposeUrls() { for (const url of this.urls) URL.revokeObjectURL(url); this.urls = []; }
+  disposeUrls() { this.audioPlayer.stop(); this.metadataObserver?.disconnect(); this.metadata.cancel(); for (const url of this.urls) URL.revokeObjectURL(url); this.urls = []; }
 
   async mutate(mutator, message = t('asset-library.s1ba86ae')) {
     const context = this.getContext(), next = new Map(context.assets ?? []), folders = new Set(context.folders ?? []);
@@ -36,11 +40,11 @@ export class AssetLibraryPanel {
   }
 
   async addFiles(files, destination = this.selectedFolder ?? parentFolder(this.selected ?? '')) {
-    const images = [...files].filter(file => IMAGE_EXTENSION.test(file.name));
-    if (!images.length) return this.notify(t('asset-library.sd5bd4ef'), 'warning');
+    const media = [...files].filter(file => libraryAsset(file.name));
+    if (!media.length) return this.notify(t('asset-library.noMedia'), 'warning');
     return this.mutate(async (next, folders) => {
       let first;
-      for (const file of images) {
+      for (const file of media) {
         let path = validAssetPath((destination ? destination + '/' : '') + slashPath(file.webkitRelativePath || file.name));
         if (skinOwnedPath(path, noiseSkinRoots(next, this.getContext().chart, this.getContext().chartName))) throw Error(t('asset-library.sdc0551f'));
         const occupied = new Set([...next.keys(), ...folders].map(pathKey));
@@ -50,7 +54,7 @@ export class AssetLibraryPanel {
         next.set(path, new Uint8Array(await file.arrayBuffer())); collectAssetFolders(path, folders); first ??= path;
       }
       this.selected = first; this.selectedFolder = null;
-    }, t('asset-library.scb9c5ec') + images.length + t('asset-library.s32c3e5b'));
+    }, t('asset-library.importedMedia', { count: media.length }));
   }
 
   dialog(title, description, control, callback) {
@@ -85,7 +89,8 @@ export class AssetLibraryPanel {
 
   renamePath(name, folder = false) {
     const input = document.createElement('input'); input.type = 'text'; input.value = name.split('/').at(-1); input.setAttribute('aria-label', t('asset-library.sdd74a1b'));
-    this.dialog(folder ? t('asset-library.s6c29bd8') : t('asset-library.sd54b676'), t('asset-library.s4369781'), input, () => {
+    const audio = !folder && AUDIO_EXTENSION.test(name);
+    this.dialog(folder ? t('asset-library.s6c29bd8') : audio ? t('asset-library.renameAudio') : t('asset-library.sd54b676'), audio ? t('asset-library.audioReferences') : t('asset-library.s4369781'), input, () => {
       const leaf = validAssetPath(input.value); if (leaf.includes('/')) throw Error(t('asset-library.sab4d974'));
       const parent = parentFolder(name); return this.movePath(name, (parent ? parent + '/' : '') + leaf, folder);
     });
@@ -99,7 +104,7 @@ export class AssetLibraryPanel {
       select.append(new Option(path, path));
     }
     select.value = parentFolder(name);
-    this.dialog(folder ? t('asset-library.s0a848c0') : t('asset-library.s063dd7e'), t('asset-library.s848923c'), select,
+    this.dialog(folder ? t('asset-library.s0a848c0') : AUDIO_EXTENSION.test(name) ? t('asset-library.moveAudio') : t('asset-library.s063dd7e'), t('asset-library.s848923c'), select,
       () => this.movePath(name, (select.value ? select.value + '/' : '') + name.split('/').at(-1), folder));
   }
 
@@ -107,12 +112,12 @@ export class AssetLibraryPanel {
     const context = this.getContext(); if (folder) assertImageFolder(context, name);
     const names = [...context.assets.keys()].filter(path => folder ? withinFolder(path, name) : path === name);
     const content = document.createElement('p'); content.textContent = folder ? t('asset-library.s3818597') + names.length + t('asset-library.sbaff198') : name;
-    this.dialog(folder ? t('asset-library.s235bf79') : t('asset-library.s536ae02'), t('asset-library.s6f2c401'), content,
+    this.dialog(folder ? t('asset-library.s235bf79') : AUDIO_EXTENSION.test(name) ? t('asset-library.deleteAudio') : t('asset-library.s536ae02'), t('asset-library.missingReferences'), content,
       () => this.mutate((next, folders) => {
         names.forEach(path => next.delete(path));
         if (folder) for (const path of folders) if (path === name || withinFolder(path, name)) folders.delete(path);
         this.selected = null; this.selectedFolder = null;
-      }, folder ? t('asset-library.s0dc77cb') : t('asset-library.sac20814')));
+      }, folder ? t('asset-library.s0dc77cb') : AUDIO_EXTENSION.test(name) ? t('asset-library.deletedAudio') : t('asset-library.sac20814')));
   }
 
   editImage(name) {
@@ -164,12 +169,12 @@ export class AssetLibraryPanel {
     const context = this.getContext(); if (!context) return;
     const scroll = this.host.querySelector('.asset-tree')?.scrollTop ?? 0;
     this.disposeUrls(); this.host.replaceChildren();
-    const entries = libraryImages(context.assets, context.chart, context.chartName).sort(([a], [b]) => a.localeCompare(b));
-    const title = document.createElement('div'); title.className = 'panel-title'; const count = document.createElement('small'); count.textContent = entries.length + t('asset-library.s5d8bb92'); title.append(t('asset-library.s885200a'), count); this.host.append(title);
+    const entries = libraryMedia(context.assets, context.chart, context.chartName).sort(([a], [b]) => a.localeCompare(b));
+    const title = document.createElement('div'); title.className = 'panel-title'; const count = document.createElement('small'); count.textContent = t('asset-library.mediaCount', { count: entries.length }); title.append(t('asset-library.s885200a'), count); this.host.append(title);
     const actions = document.createElement('div'); actions.className = 'asset-library-actions';
-    const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/*'; input.multiple = true; input.hidden = true;
+    const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/*,audio/*,.flac,.opus'; input.multiple = true; input.hidden = true;
     input.onchange = () => this.addFiles(input.files).catch(error => this.notify(error.message, 'error'));
-    this.action(t('asset-library.se539301'), () => input.click(), actions);
+    this.action(t('asset-library.importMedia'), () => input.click(), actions);
     const directory = document.createElement('input'); directory.type = 'file'; directory.multiple = true; directory.webkitdirectory = true; directory.hidden = true;
     directory.onchange = () => this.addFiles(directory.files).catch(error => this.notify(error.message, 'error'));
     this.action(t('asset-library.s6b64de2'), () => directory.click(), actions); this.action(t('asset-library.s95cf3cd'), () => this.createFolder(), actions); this.host.append(actions, input, directory);
@@ -179,18 +184,22 @@ export class AssetLibraryPanel {
     };
     for (const folderPath of libraryFolders(context.assets, context.folders, context.chart, context.chartName)) ensureFolder(root, slashPath(folderPath).split('/'));
     for (const [name, bytes] of entries) { const parts = slashPath(name).split('/'), file = parts.pop(); ensureFolder(root, parts).files.push([name, file, bytes]); }
+    const metadataRows = new Map();
     const createRow = ([name, file, bytes]) => {
       const row = document.createElement('button'); row.type = 'button'; row.dataset.assetPath = name; row.className = 'asset-row' + (this.selected === name ? ' selected' : '');
-      const url = createUrl(bytes, name); this.urls.push(url); const thumb = document.createElement('img'); thumb.src = url; thumb.alt = file; thumb.loading = 'lazy';
-      const label = document.createElement('span'); label.textContent = file; const bindings = this.boundLines(name), usage = document.createElement('small');
-      usage.textContent = bindings.length ? t('asset-library.scc8abc1') + bindings.join('、') : t('asset-library.s3bf179d'); row.append(thumb, label, usage); row.title = name;
+      let thumb;
+      if (AUDIO_EXTENSION.test(name)) { thumb = document.createElement('span'); thumb.className = 'asset-audio-icon'; thumb.textContent = '♫'; thumb.setAttribute('aria-hidden', 'true'); }
+      else { const url = createUrl(bytes, name); this.urls.push(url); thumb = document.createElement('img'); thumb.src = url; thumb.alt = file; thumb.loading = 'lazy'; }
+      const label = document.createElement('span'); label.className = 'asset-file-name'; label.textContent = file; const bindings = AUDIO_EXTENSION.test(name) ? [] : this.boundLines(name), usage = document.createElement('small'); usage.className = 'asset-usage';
+      const info = document.createElement('span'); info.className = 'asset-info'; info.textContent = '…'; info.title = t('asset-library.readingMetadata'); metadataRows.set(row, { bytes, name, info });
+      usage.textContent = AUDIO_EXTENSION.test(name) ? t('asset-library.audioAsset') : bindings.length ? t('asset-library.scc8abc1') + bindings.join('、') : t('asset-library.s3bf179d'); row.append(thumb, label, usage, info); row.title = name;
       row.onclick = () => { this.selected = name; this.selectedFolder = null; this.render(); }; return row;
     };
     const countFiles = node => node.files.length + [...node.folders.values()].reduce((sum, child) => sum + countFiles(child), 0);
     const renderNode = (node, label, path = '') => {
       const group = document.createElement('details'); group.open = !this.collapsed.has(path);
       group.className = 'asset-folder' + (this.selectedFolder === path ? ' selected' : ''); group.dataset.assetFolder = path;
-      const summary = document.createElement('summary'); summary.textContent = label + ' · ' + countFiles(node) + t('asset-library.s972cc4b');
+      const summary = document.createElement('summary'); summary.textContent = label + ' · ' + t('asset-library.mediaCount', { count: countFiles(node) });
       summary.onclick = event => {
         event.preventDefault(); this.selectedFolder = path; this.selected = null;
         if (group.open) this.collapsed.add(path); else this.collapsed.delete(path);
@@ -202,8 +211,21 @@ export class AssetLibraryPanel {
       return group;
     };
     tree.append(renderNode(root, t('asset-library.s18755ac')));
-    if (!entries.length) { const empty = document.createElement('p'); empty.className = 'hint'; empty.textContent = t('asset-library.s25c3efc'); tree.append(empty); }
+    if (!entries.length) { const empty = document.createElement('p'); empty.className = 'hint'; empty.textContent = t('asset-library.emptyMedia'); tree.append(empty); }
     this.host.append(tree); tree.scrollTop = scroll;
+    const readMetadata = row => {
+      const value = metadataRows.get(row); if (!value) return; metadataRows.delete(row);
+      this.metadata.read(value.bytes, value.name).then(metadata => {
+        if (!value.info.isConnected) return;
+        value.info.textContent = metadata?.kind === 'image' ? metadata.width + ' × ' + metadata.height : metadata?.kind === 'audio' ? formatAssetDuration(metadata.duration) : '—';
+        value.info.title = metadata ? t(metadata.kind === 'image' ? 'asset-library.resolution' : 'asset-library.duration', { value: value.info.textContent }) : t('asset-library.metadataUnavailable'); value.info.setAttribute('aria-label', value.info.title);
+      });
+    };
+    if (typeof IntersectionObserver === 'function') {
+      const observer = new IntersectionObserver(entries => { for (const entry of entries) if (entry.isIntersecting) { observer.unobserve(entry.target); readMetadata(entry.target); } }, { root: tree, rootMargin: '100px' });
+      this.metadataObserver = observer;
+      for (const row of metadataRows.keys()) observer.observe(row);
+    } else for (const row of [...metadataRows.keys()]) readMetadata(row);
     if (this.selected && entries.some(([name]) => name === this.selected)) this.renderDetails(this.selected, context.assets.get(this.selected));
     else if (this.selectedFolder !== null) this.renderFolder(this.selectedFolder, entries);
   }
@@ -215,19 +237,22 @@ export class AssetLibraryPanel {
   }
 
   renderDetails(name, bytes) {
-    const details = document.createElement('div'); details.className = 'asset-details'; const image = document.createElement('img');
-    const url = createUrl(bytes, name); this.urls.push(url); image.src = url; image.alt = name;
-    const heading = document.createElement('strong'); heading.textContent = name; const usage = document.createElement('p'), lines = this.boundLines(name);
+    const details = document.createElement('div'); details.className = 'asset-details'; const isAudio = AUDIO_EXTENSION.test(name); let image;
+    if (!isAudio) { image = document.createElement('img'); const url = createUrl(bytes, name); this.urls.push(url); image.src = url; image.alt = name; }
+    const heading = document.createElement('strong'); heading.textContent = name; const usage = document.createElement('p'), lines = isAudio ? [] : this.boundLines(name);
     usage.textContent = lines.length ? t('asset-library.s239c1de') + lines.join('、') : t('asset-library.s6cc7aa5');
     const actions = document.createElement('div'); actions.className = 'asset-detail-actions';
     this.action(t('asset-library.s1cd80fd'), () => this.renamePath(name), actions); this.action(t('asset-library.sac9d34f'), () => this.moveDialog(name), actions);
-    this.action(t('asset-library.s496f841'), () => this.editImage(name), actions); this.action(t('asset-library.s3755f56'), () => this.deletePath(name), actions); this.openAction(name, false, actions);
-    details.append(heading, image, usage, actions); this.host.append(details);
+    if (isAudio) this.action(t('asset-audio.play'), () => this.audioPlayer.play(bytes, name), actions);
+    else this.action(t('asset-library.s496f841'), () => this.editImage(name), actions);
+    this.action(t('asset-library.s3755f56'), () => this.deletePath(name), actions); this.openAction(name, false, actions);
+    details.append(heading); if (image) details.append(image); if (isAudio) details.append(this.audioPlayer.element); else details.append(usage);
+    details.append(actions); this.host.append(details);
   }
 
   renderFolder(path, entries) {
     const details = document.createElement('div'); details.className = 'asset-details'; const heading = document.createElement('strong'); heading.textContent = path || t('asset-library.s18755ac');
-    const count = document.createElement('p'); count.textContent = entries.filter(([name]) => withinFolder(name, path)).length + t('asset-library.s432f6e8');
+    const count = document.createElement('p'); count.textContent = t('asset-library.folderMediaCount', { count: entries.filter(([name]) => withinFolder(name, path)).length });
     const actions = document.createElement('div'); actions.className = 'asset-detail-actions';
     this.action(t('asset-library.sa48b827'), () => this.createFolder(path), actions);
     if (path) {

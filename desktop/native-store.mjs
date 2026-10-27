@@ -6,7 +6,7 @@ import { createReadStream } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { assertChart } from '../src/core/chart.mjs';
 import { applySnapshotPart } from '../src/platform/recovery-transfer.mjs';
-import { libraryImages, libraryFolders, validAssetPath, withinFolder, parentFolder } from '../src/core/asset-library.mjs';
+import { libraryMedia, libraryFolders, validAssetPath, withinFolder, parentFolder } from '../src/core/asset-library.mjs';
 
 const sha = value => createHash('sha256').update(value).digest('hex');
 const digest = async path => { const hash = createHash('sha256'); for await (const chunk of createReadStream(path)) hash.update(chunk); return hash.digest('hex'); };
@@ -136,11 +136,11 @@ export class NativeStore {
   async assetFolder(id, virtualPath, folder = false) {
     await this.projectFolder(id);
     if (typeof virtualPath !== 'string' || typeof folder !== 'boolean') throw Error('素材路径无效');
-    if (virtualPath) virtualPath = validAssetPath(virtualPath); else if (!folder) throw Error('请选择图片');
+    if (virtualPath) virtualPath = validAssetPath(virtualPath); else if (!folder) throw Error('请选择素材');
     const envelope = await this.read('projects', id), { data, binaries } = envelope;
-    const assets = new Map(data.assets ?? []), images = libraryImages(assets, data.chart, data.chartName);
+    const assets = new Map(data.assets ?? []), media = libraryMedia(assets, data.chart, data.chartName);
     const folders = libraryFolders(assets, data.assetFolders, data.chart, data.chartName);
-    if (folder ? virtualPath && !folders.has(virtualPath) : !images.some(([path]) => path === virtualPath)) throw Error('保存的谱面中找不到此图片或文件夹，请先保存最新修改');
+    if (folder ? virtualPath && !folders.has(virtualPath) : !media.some(([path]) => path === virtualPath)) throw Error('保存的谱面中找不到此素材或文件夹，请先保存最新修改');
     const directory = folder ? virtualPath : parentFolder(virtualPath);
     const revision = data.storageRevision;
     if (!uuidPattern.test(revision)) throw failure('StorageIntegrityError', '素材查看版本无效');
@@ -159,15 +159,15 @@ export class NativeStore {
     const targetDirectory = join(view, directory); await ensure(targetDirectory);
     for (const path of folders) if (path === directory || withinFolder(path, directory)) await ensure(join(view, validAssetPath(path)));
     const descriptors = new Map(binaries.filter(entry => entry.path.length === 3 && entry.path[0] === 'assets' && entry.path[2] === 1).map(entry => [data.assets[entry.path[1]]?.[0], entry]));
-    for (const [path] of images) {
+    for (const [path] of media) {
       if (!withinFolder(path, directory)) continue;
       const name = validAssetPath(path), target = join(view, name); await ensure(dirname(target));
       try { await regular(target); continue; } catch (error) { if (error.code !== 'ENOENT') throw error; }
       const descriptor = descriptors.get(path);
-      if (!descriptor || !hashPattern.test(descriptor.hash)) throw failure('StorageIntegrityError', '图片素材引用无效');
+      if (!descriptor || !hashPattern.test(descriptor.hash)) throw failure('StorageIntegrityError', '素材引用无效');
       const source = join(this.root, 'blobs', descriptor.hash);
       await regular(source);
-      if (await digest(source) !== descriptor.hash) throw failure('StorageIntegrityError', '图片素材校验失败');
+      if (await digest(source) !== descriptor.hash) throw failure('StorageIntegrityError', '素材校验失败');
       // Publish complete copies only; an interrupted copy is never shown as valid.
       const temporary = join(dirname(target), '.image-' + randomUUID());
       try {
