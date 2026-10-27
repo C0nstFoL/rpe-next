@@ -482,6 +482,31 @@ h2 { margin: 0; font-size: 21px; font-weight: 400; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px; }
 #modal-error { color: #ffaaaa; white-space: pre-wrap; }
 .choice { display: block; width: 100%; white-space: normal; text-align: left; padding: 12px; margin: 5px 0; }
+.chart-import-dialog { width: min(720px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; }
+.chart-import-option { min-width: 0; margin: 14px 0; padding: 14px; border: 1px solid var(--line, #515151); border-radius: 8px; }
+.chart-import-option[data-active="true"] { border-color: var(--accent, #ffdc70); }
+.chart-import-option legend { padding: 0 6px; }
+.chart-import-option legend label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.chart-import-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.chart-import-option[data-mode="pez"] .chart-import-slots { grid-template-columns: minmax(0, 1fr); }
+.chart-import-slot { min-width: 0; }
+.chart-import-file { display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 4px; width: 100%; min-height: 96px; padding: 12px 14px; border: 1px dashed var(--muted, #aaa); border-radius: 6px; text-align: center; white-space: normal; }
+.chart-import-file.has-file { border-style: solid; border-color: var(--accent, #ffdc70); }
+.chart-import-file[aria-invalid="true"] { border-color: #ffaaaa; }
+.chart-import-filename { display: block; overflow-wrap: anywhere; color: var(--muted, #aaa); font-size: 12px; }
+.chart-import-file.has-file .chart-import-filename { color: inherit; }
+.chart-import-choose { color: var(--accent, #ffdc70); font-size: 12px; }
+.chart-import-status { min-height: 1.5em; color: var(--muted, #aaa); overflow-wrap: anywhere; }
+.chart-import-status.error { color: #ffaaaa; }
+#chart-import-dialog .chart-import-file { gap: 4px; height: auto; min-height: 96px; padding: 12px 14px; }
+#chart-import-dialog .chart-import-file strong, #chart-import-dialog .chart-import-filename, #chart-import-dialog .chart-import-choose { margin: 0; line-height: 1.2; }
+#chart-import-dialog .hint, #chart-import-dialog .chart-import-status { line-height: 1.35; }
+.chart-import-batch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
+#chart-import-dialog .chart-import-batch > span { color: var(--muted, #aaa); font-size: 12px; line-height: 1.2; }
+@media (max-width: 600px) {
+  .chart-import-slots { grid-template-columns: minmax(0, 1fr); }
+  .chart-import-file { min-height: 96px; gap: 4px; padding: 12px 14px; }
+}
 .bpm-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; margin: 10px 8px; width: calc(100% - 16px); min-width: 0; }
 .bpm-row input { width: 100%; min-width: 0; }
 .bpm-row button { min-width: 0; padding-inline: 7px; }
