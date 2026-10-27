@@ -19,9 +19,14 @@ export function showImportDialog({ readFiles, onOpen, onError }) {
   dialog.append(heading, description);
   let mode = 'pez', busy = false;
   const selected = {}, groups = new Map(), slots = new Map();
-  let batchButton;
+  let batchButton, additionalSummary;
   const sync = () => {
     if (batchButton) batchButton.disabled = busy;
+    if (additionalSummary) {
+      const files = selected.additional ?? [];
+      additionalSummary.hidden = !files.length;
+      additionalSummary.textContent = t('chart-import.additional', { files: files.map(file => file.name).join('、') });
+    }
     for (const [value, { group, radio }] of groups) {
       radio.checked = mode === value; radio.disabled = busy; group.dataset.active = String(mode === value);
     }
@@ -57,7 +62,7 @@ export function showImportDialog({ readFiles, onOpen, onError }) {
     for (const kind of kinds) {
       const slot = document.createElement('div'); slot.className = 'chart-import-slot';
       const button = document.createElement('button'); button.type = 'button'; button.className = 'chart-import-file'; button.dataset.kind = kind;
-      const fieldTitle = document.createElement('strong'); fieldTitle.textContent = t('chart-import.' + kind);
+      const fieldTitle = document.createElement('strong'); fieldTitle.textContent = t('chart-import.' + kind) + (kind === 'music' || kind === 'cover' ? t('chart-import.optional') : '');
       const name = document.createElement('span'); name.className = 'chart-import-filename';
       const choose = document.createElement('span'); choose.className = 'chart-import-choose'; choose.textContent = t(value === 'separate' ? 'chart-import.selectMultiple' : 'chart-import.select');
       button.append(fieldTitle, name, choose);
@@ -72,7 +77,7 @@ export function showImportDialog({ readFiles, onOpen, onError }) {
         mode = value;
         input.value = '';
         try {
-          if (value === 'separate') Object.assign(selected, assignChartImportFiles(files, selected));
+          if (value === 'separate') Object.assign(selected, assignChartImportFiles(files, selected, files.length === 1 ? kind : undefined));
           else {
             if (files.length !== 1) throw Error(t('chart-import.single'));
             selected[kind] = files[0];
@@ -84,6 +89,10 @@ export function showImportDialog({ readFiles, onOpen, onError }) {
         }
       };
       slots.set(kind, { button, name, input }); slot.append(button, input); grid.append(slot);
+    }
+    if (value === 'separate') {
+      additionalSummary = document.createElement('p'); additionalSummary.className = 'chart-import-status'; additionalSummary.id = 'chart-import-additional';
+      group.append(additionalSummary);
     }
     dialog.append(group);
   }
