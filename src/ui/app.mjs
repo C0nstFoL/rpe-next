@@ -9,6 +9,8 @@ import { TempoMap } from '../core/tempo.mjs';
 import { AudioTransport } from '../platform/audio.mjs';
 import { openFiles, assetBytes, resourceReferences, attachExternalEffects } from '../platform/files.mjs';
 import { showExportDialog } from './export-dialog.mjs';
+import { showImportDialog } from './import-dialog.mjs';
+import { readChartImport } from '../platform/chart-import.mjs';
 import { listDrafts, readDraft, saveSnapshot } from '../platform/recovery.mjs';
 import { Timeline, prepareCanvas } from './timeline.mjs';
 import { Preview } from './preview.mjs';
@@ -1285,22 +1287,30 @@ listen('#home-new', () => element('#new').click());
 listen('#home-open', () => element('#open').click());
 listen('#home-migrate', () => element('#migrate').click());
 listen('#resume-editor', () => setHome(false));
-listen('#open', () => { element('#file-input').click(); });
+function chartImportOptions() {
+  return { ...fileOptions(), confirmLargeArchive: info => new Promise(resolve => {
+    const host = showDialog(t('app.sfa57b17'), t('app.s3e6d0c4', { p0: (info.declaredBytes / 1024 ** 2).toFixed(1), p1: info.count }));
+    const modal = host.closest('dialog'), apply = element('#modal-apply'); let decided = false;
+    modal.addEventListener('close', () => { if (!decided) resolve(false); }, { once: true });
+    apply.hidden = false; apply.textContent = t('app.s797d0a5');
+    apply.onclick = () => { decided = true; modal.close(); resolve(true); };
+  }) };
+}
+function openImportedCharts(loaded) {
+  if (!loaded) return;
+  guardReplace(() => {
+    if (loaded.candidates.length === 1) loadCandidate(loaded.candidates[0], loaded.assets).catch(reportError);
+    else choose(t('app.s47008a9'), t('app.sb2a3d63'), loaded.candidates, candidate => `${candidate.name} · ${candidate.chart.META.name ?? ''}`, candidate => loadCandidate(candidate, loaded.assets));
+  });
+}
+listen('#open', () => showImportDialog({
+  readFiles: (mode, selected) => readChartImport(mode, selected, chartImportOptions()),
+  onOpen: openImportedCharts,
+  onError: reportError,
+}));
 element('#file-input').addEventListener('change', async event => {
   try {
-    const loaded = await openFiles(event.target.files, { ...fileOptions(), confirmLargeArchive: info => new Promise(resolve => {
-      const host = showDialog(t('app.sfa57b17'), t('app.s3e6d0c4', { p0: (info.declaredBytes / 1024 ** 2).toFixed(1), p1: info.count }));
-      const modal = host.closest('dialog'), apply = element('#modal-apply'); let decided = false;
-      modal.addEventListener('close', () => { if (!decided) resolve(false); }, { once: true });
-      apply.hidden = false; apply.textContent = t('app.s797d0a5');
-      apply.onclick = () => { decided = true; modal.close(); resolve(true); };
-    }) });
-    if (!loaded) return;
-    const proceed = () => {
-      if (loaded.candidates.length === 1) loadCandidate(loaded.candidates[0], loaded.assets).catch(reportError);
-      else choose(t('app.s47008a9'), t('app.sb2a3d63'), loaded.candidates, candidate => `${candidate.name} · ${candidate.chart.META.name ?? ''}`, candidate => loadCandidate(candidate, loaded.assets));
-    };
-    guardReplace(proceed);
+    openImportedCharts(await openFiles(event.target.files, chartImportOptions()));
   } catch (error) { reportError(error); }
   finally { event.target.value = ''; }
 });
