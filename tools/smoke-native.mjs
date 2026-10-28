@@ -67,8 +67,19 @@ export async function smokeNative(contents, service, controls) {
   });
   assert.ok(builtins.length > 0); assert.ok(builtins.every(record => record.files > 0));
   checks.push('built-in note skin files and images load through the packaged application protocol');
-  assert.equal(await run(contents, () => document.querySelector('#storage-settings') === document.querySelector('.settings-body').lastElementChild), true);
-  checks.push('storage and backup settings appear after all other settings');
+  const storageSettings = await run(contents, () => {
+    const panel = document.querySelector('#storage-settings');
+    return {
+      count: document.querySelectorAll('#storage-settings').length,
+      category: panel?.closest('[data-settings-section]')?.dataset.settingsSection,
+      missingControls: ['storage-refresh', 'library-export-all', 'storage-recovery-manage', 'storage-open-root', 'storage-backup-folder']
+        .filter(id => !panel?.querySelector('#' + id))
+    };
+  });
+  assert.equal(storageSettings.count, 1, 'Native storage settings must be present exactly once');
+  assert.equal(storageSettings.category, 'storage', 'Native storage settings must belong to the storage navigation category');
+  assert.deepEqual(storageSettings.missingControls, [], 'Native storage and backup controls must remain available');
+  checks.push('storage and backup controls appear in the storage navigation category');
   const migration = await run(contents, async () => {
     const library = await import('/src/platform/library.mjs'), recovery = await import('/src/platform/recovery.mjs');
     const { readEditorSkins } = await import('/src/platform/editor-skins.mjs'), { readNoteSkins } = await import('/src/platform/note-skins.mjs'), { readMods } = await import('/src/platform/mods.mjs');
